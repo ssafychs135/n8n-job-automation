@@ -1,0 +1,248 @@
+{
+  "name": "03 메시지 전송기 (Notifier)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "id": "91e134db-d74e-43b5-a11d-8edacc8711aa",
+      "name": "10분마다 트리거",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "828ea179-42c2-4bad-81d9-b00c6a3981ae",
+              "name": "discordWebhookUrl",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "949a937b-7b2f-4c72-80e9-00f3dede8871",
+              "name": "notifyBatchSize",
+              "value": 30,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0251cbd9-57ee-4aa2-b596-e4104c00560a",
+      "name": "설정 (Config)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT id, source, job_id, company, title, url, min_career, max_career, tech_stacks, summary FROM jobs WHERE status='done' AND notified_at IS NULL ORDER BY collected_at LIMIT {{ $json.notifyBatchSize }}",
+        "options": {}
+      },
+      "id": "56bf9038-57fb-41c1-bdec-4be85545d35f",
+      "name": "미전송 done 조회",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_ON_IMPORT",
+          "name": "Postgres (jobs)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// done인데 아직 안 보낸 공고를 디스코드 임베드 카드로 만든다(10개씩 묶음).\nconst rows = $('미전송 done 조회').all();\nif (rows.length === 0) return [];\nconst today = new Date().toISOString().slice(0, 10);\n\nconst embeds = rows.map(it => {\n  const m = it.json;\n  let desc = (m.summary || '').replace(/\\n?기술스택\\s*[:：].*$/m, '').trim();\n  if (desc.length > 400) desc = desc.slice(0, 400) + '…';\n  const stacks = Array.isArray(m.tech_stacks) ? m.tech_stacks.join(', ') : (m.tech_stacks || '');\n  const career = [m.min_career, m.max_career].filter(v => v != null).join('~') || '무관';\n  return {\n    title: `${m.company} — ${m.title}`.slice(0, 250),\n    url: m.url, color: 5814783,\n    description: desc || '(요약 없음)',\n    fields: [\n      { name: '경력', value: String(career), inline: true },\n      { name: '기술스택', value: (stacks || '-').slice(0, 1000), inline: true },\n      { name: '출처', value: String(m.source), inline: true },\n    ],\n  };\n});\n\nconst out = [];\nfor (let i = 0; i < embeds.length; i += 10) {\n  const item = { embeds: embeds.slice(i, i + 10) };\n  if (i === 0) item.content = `📋 **새 채용 공고 ${embeds.length}건** (${today})`;\n  out.push({ json: item });\n}\nreturn out;"
+      },
+      "id": "29c53053-12fc-46df-b958-74dae9def1f8",
+      "name": "임베드 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('설정 (Config)').first().json.discordWebhookUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.content, embeds: $json.embeds }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "id": "d0eb7c72-6c32-4b7f-a066-69a8b80676e3",
+      "name": "디스코드 전송",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// 방금 조회한 done 공고들을 notified 처리 (전송 후 실행).\nconst rows = $('미전송 done 조회').all();\nconst ids = rows.map(r => r.json.id).filter(v => v != null);\nif (ids.length === 0) return [];\nreturn [{ json: { sql: `UPDATE jobs SET notified_at=now() WHERE id IN (${ids.join(',')});` } }];"
+      },
+      "id": "1c0c18b6-cdc0-480d-b67e-810afdc7ff6e",
+      "name": "notified 마킹 SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "fea50ca1-0846-4665-a643-52298d09ed82",
+      "name": "notified UPDATE",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1320,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_ON_IMPORT",
+          "name": "Postgres (jobs)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### 메시지 전송기 (Notifier)\nstatus='done' & notified_at IS NULL 공고를\n디스코드 임베드로 전송 → notified_at 마킹.\n워커와 분리돼 있어, 요약 처리와 알림이 독립적으로 동작.\n\n- Config의 discordWebhookUrl 입력 필요\n- notifyBatchSize: 한 번에 알릴 최대 건수",
+        "height": 200,
+        "width": 320,
+        "color": 3
+      },
+      "id": "11f671fe-8fc5-4cf4-ba6b-39690cf1a179",
+      "name": "메모: 전송기",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        440,
+        60
+      ]
+    }
+  ],
+  "connections": {
+    "10분마다 트리거": {
+      "main": [
+        [
+          {
+            "node": "설정 (Config)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "설정 (Config)": {
+      "main": [
+        [
+          {
+            "node": "미전송 done 조회",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "미전송 done 조회": {
+      "main": [
+        [
+          {
+            "node": "임베드 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "임베드 생성": {
+      "main": [
+        [
+          {
+            "node": "디스코드 전송",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "디스코드 전송": {
+      "main": [
+        [
+          {
+            "node": "notified 마킹 SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "notified 마킹 SQL": {
+      "main": [
+        [
+          {
+            "node": "notified UPDATE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

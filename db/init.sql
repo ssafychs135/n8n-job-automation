@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   status        TEXT        NOT NULL DEFAULT 'pending',  -- pending | done | skipped | failed
   attempts      INT         NOT NULL DEFAULT 0,          -- 처리 시도 횟수(재시도 제한용)
 
+  notified_at   TIMESTAMPTZ,                   -- 메시지 전송 시각 (NULL = 아직 안 보냄)
+
   closed_at     TIMESTAMPTZ,                   -- 공고 마감일
   collected_at  TIMESTAMPTZ NOT NULL DEFAULT now(),  -- 수집(pending 적재) 시각
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),  -- 마지막 상태 변경 시각
@@ -35,6 +37,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_status       ON jobs (status);
 CREATE INDEX IF NOT EXISTS idx_jobs_collected_at ON jobs (collected_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_source       ON jobs (source);
+CREATE INDEX IF NOT EXISTS idx_jobs_notify       ON jobs (status, notified_at);  -- notifier가 미전송 done을 빠르게 집기
 
 -- 참고: 큐/통계 예시 쿼리
 --  · 대기 건수:          SELECT status, count(*) FROM jobs GROUP BY status;
