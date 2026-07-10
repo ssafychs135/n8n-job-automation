@@ -39,6 +39,27 @@ services:
       - ./data/n8n:/home/node/.n8n
       # 워크플로우가 만든 Markdown 결과물을 호스트에서 바로 열어볼 수 있게 매핑.
       - ./data/output:/data/output
+    # n8n이 뜨기 전에 DB가 준비되도록 (연결 자체는 워크플로우 실행 시점에 함).
+    depends_on:
+      - postgres
+
+  # 수집 공고 저장·중복관리·통계용 PostgreSQL.
+  # n8n은 같은 Docker 네트워크에서 host "postgres", port 5432 로 접속한다.
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      # DB 데이터 영속화: 이 폴더만 있으면 컨테이너를 지워도 데이터가 남음.
+      - ./data/postgres:/var/lib/postgresql/data
+      # 최초 기동 시 스키마 자동 생성 (Postgres 공식 이미지의 초기화 훅).
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      # (선택) 호스트에서 psql·DBeaver 등으로 직접 통계 쿼리하려면 사용. 불필요하면 삭제 가능.
+      - "5432:5432"
 
 # 참고: Ollama 같은 별도 LLM 서비스를 두지 않는다.
 # LLM(Gemma 4 E4B, MLX)은 Metal 직접 접근이 필요해 Docker 안에서 못 돌기 때문에
