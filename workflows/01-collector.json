@@ -1,0 +1,243 @@
+{
+  "name": "01 수집기 (Collector)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "c8677b4f-1ad5-4fc5-978c-7a9db9a29dd5",
+      "name": "매일 09시 트리거",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "03e9fde7-62dd-44f9-b148-72d4cd451f98",
+              "name": "keywords",
+              "value": "={{ [\"백엔드\", \"Node.js\"] }}",
+              "type": "array"
+            },
+            {
+              "id": "94cf4c88-e4e1-4949-965e-372fbb9689e5",
+              "name": "maxPages",
+              "value": 1,
+              "type": "number"
+            },
+            {
+              "id": "26b23a3a-a356-4c82-a097-de4a4d18e72e",
+              "name": "allowedWantedCategories",
+              "value": "={{ [518, 507] }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "05434b2a-c68f-4ea6-a0b8-52fc9197d922",
+      "name": "설정 (Config)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 키워드 × 소스 × 페이지 조합으로 목록 API URL을 만든다.\nconst cfg = $input.first().json;\nconst keywords = cfg.keywords || [];\nconst maxPages = Math.max(1, Number(cfg.maxPages) || 1);\nconst out = [];\nfor (const kw of keywords) {\n  const q = encodeURIComponent(kw);\n  // 원티드: 검색 엔드포인트가 offset 미동작(~12건 캡) → 키워드당 1회\n  out.push({ json: { url: `https://www.wanted.co.kr/api/chaos/search/v1/results?query=${q}&country=kr&job_sort=job.latest_order&limit=20` } });\n  // 점프잇: page 페이지네이션 동작 → maxPages 만큼\n  for (let page = 1; page <= maxPages; page++) {\n    out.push({ json: { url: `https://jumpit-api.saramin.co.kr/api/positions?keyword=${q}&sort=relation&page=${page}` } });\n  }\n}\nreturn out;"
+      },
+      "id": "faad8f2b-5670-48c1-9b35-26cb112e7dc3",
+      "name": "요청 URL 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 2,
+              "batchInterval": 300
+            }
+          }
+        }
+      },
+      "id": "8791ef6f-0a7d-4232-9254-50fac1b5c417",
+      "name": "목록 조회",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "// 목록 응답을 공통 스키마로 정규화 (+원티드 직군 화이트리스트 필터).\nconst stripTags = (s) => (s || '').replace(/<[^>]*>/g, '').trim();\nconst allowed = $('설정 (Config)').first().json.allowedWantedCategories || [518, 507];\nconst out = [];\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  const jumpit = j.result?.positions;\n  if (Array.isArray(jumpit)) {\n    for (const p of jumpit) {\n      out.push({ json: {\n        source: 'jumpit', jobId: String(p.id ?? ''),\n        company: p.companyName ?? '', title: stripTags(p.title),\n        url: `https://jumpit.saramin.co.kr/position/${p.id}`,\n        minCareer: p.minCareer ?? null, maxCareer: p.maxCareer ?? null,\n        techStacks: (p.techStacks || []).map(t => stripTags(typeof t === 'string' ? t : (t.stack ?? t.name ?? ''))),\n        locations: p.locations ?? [], closedAt: p.closedAt ?? null,\n      }});\n    }\n    continue;\n  }\n  const wanted = j.positions?.data ?? j.data;\n  if (Array.isArray(wanted)) {\n    for (const p of wanted) {\n      const pid = p.category_tag?.parent_id;         // 직군 화이트리스트\n      if (allowed.length && pid != null && !allowed.includes(pid)) continue;\n      out.push({ json: {\n        source: 'wanted', jobId: String(p.id ?? ''),\n        company: p.company?.name ?? '', title: p.position ?? '',\n        url: `https://www.wanted.co.kr/wd/${p.id}`,\n        minCareer: null, maxCareer: null,           // 원티드 연차는 상세에만 → 워커에서 채움\n        techStacks: [],                             // 원티드 기술스택도 상세/요약에서 채움\n        locations: [], closedAt: p.due_time  // 원티드 address는 객체라 생략 ?? null,\n      }});\n    }\n    continue;\n  }\n}\nreturn out;"
+      },
+      "id": "d5402c39-727b-4ef1-9762-820027147620",
+      "name": "정규화 (Normalize)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 정규화 공고를 pending으로 bulk INSERT하는 SQL 생성 (within-run 중복 제거 + ON CONFLICT).\nconst esc = (v) => v == null ? 'NULL' : `'${String(v).replace(/'/g, \"''\")}'`;\nconst num = (v) => (v == null || v === '') ? 'NULL' : (Number.isFinite(Number(v)) ? Number(v) : 'NULL');\nconst arr = (list) => { const a = (list || []).map(s => `'${String(s).replace(/'/g, \"''\")}'`); return a.length ? `ARRAY[${a.join(',')}]::text[]` : `'{}'::text[]`; };\nconst seen = new Set();\nconst rows = [];\nfor (const it of $input.all()) {\n  const m = it.json;\n  const key = `${m.source}:${m.jobId}`;\n  if (!m.jobId || seen.has(key)) continue;   // 이번 실행 내 중복 제거(bulk insert 중복 target 방지)\n  seen.add(key);\n  rows.push(`(${esc(m.source)},${esc(m.jobId)},${esc(m.company)},${esc(m.title)},${esc(m.url)},${num(m.minCareer)},${num(m.maxCareer)},${arr(m.techStacks)},${esc((m.locations || []).join(', '))},${m.closedAt ? esc(m.closedAt) : 'NULL'})`);\n}\nif (rows.length === 0) return [];\nconst sql = `INSERT INTO jobs (source,job_id,company,title,url,min_career,max_career,tech_stacks,locations,closed_at) VALUES ${rows.join(',')} ON CONFLICT (source,job_id) DO NOTHING;`;\nreturn [{ json: { sql, count: rows.length } }];"
+      },
+      "id": "46a8d6c3-e1a5-46a0-954d-0e67fcd1af5d",
+      "name": "INSERT SQL 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "99963c0c-1e34-4816-a06d-68f6a2f96175",
+      "name": "pending 적재",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1320,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_ON_IMPORT",
+          "name": "Postgres (jobs)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### 수집기 (Collector)\n키워드로 목록 수집 → 정규화(직군필터) →\njobs 테이블에 **status='pending'** 적재.\nLLM 안 부름(빠름). 실제 요약은 워커가 담당.\n\n- maxPages: 점프잇 페이지 수(풀스캔 시 ↑). 원티드는 ~12건 캡.\n- ON CONFLICT로 이미 있는 공고는 자동 스킵(중복방지).",
+        "height": 220,
+        "width": 320,
+        "color": 4
+      },
+      "id": "b39a5e4a-ed45-4d13-bb97-caaac3bace8e",
+      "name": "메모: 수집기",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        440,
+        60
+      ]
+    }
+  ],
+  "connections": {
+    "매일 09시 트리거": {
+      "main": [
+        [
+          {
+            "node": "설정 (Config)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "설정 (Config)": {
+      "main": [
+        [
+          {
+            "node": "요청 URL 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "요청 URL 생성": {
+      "main": [
+        [
+          {
+            "node": "목록 조회",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "목록 조회": {
+      "main": [
+        [
+          {
+            "node": "정규화 (Normalize)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "정규화 (Normalize)": {
+      "main": [
+        [
+          {
+            "node": "INSERT SQL 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "INSERT SQL 생성": {
+      "main": [
+        [
+          {
+            "node": "pending 적재",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
