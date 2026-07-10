@@ -1,0 +1,392 @@
+{
+  "name": "02 워커 (Worker)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "f2bdf87e-44e1-4a8a-b904-9018e1e6e7ee",
+      "name": "5분마다 트리거",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "06b0196c-e833-4974-b30d-a774d572e19f",
+              "name": "batchSize",
+              "value": 20,
+              "type": "number"
+            },
+            {
+              "id": "fefeb628-ae35-4279-9a7d-4c37b537d5b8",
+              "name": "model",
+              "value": "kanana-1.5-8b-instruct-2505-mlx",
+              "type": "string"
+            },
+            {
+              "id": "3ac08f26-719f-484d-bce3-f81dd801ca25",
+              "name": "maxCareerYears",
+              "value": 99,
+              "type": "number"
+            },
+            {
+              "id": "74fdacf5-7233-400f-9b6b-48e4b293b082",
+              "name": "maxAttempts",
+              "value": 3,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b23ce130-8305-4b19-a6e9-b13dbb107687",
+      "name": "설정 (Config)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT id, source, job_id, company, title, url, min_career, max_career, attempts FROM jobs WHERE status='pending' ORDER BY collected_at LIMIT {{ $json.batchSize }}",
+        "options": {}
+      },
+      "id": "276fefe1-4d90-4d24-8fff-ea9dd36e327a",
+      "name": "pending 배치 조회",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_ON_IMPORT",
+          "name": "Postgres (jobs)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.source === 'jumpit' ? 'https://jumpit-api.saramin.co.kr/api/position/' + $json.job_id : 'https://www.wanted.co.kr/api/chaos/jobs/v4/' + $json.job_id + '/details?country=kr' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 4,
+              "batchInterval": 300
+            }
+          }
+        }
+      },
+      "id": "b7167324-f550-482e-8321-88a671e88773",
+      "name": "상세 조회",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "// pending 배치의 상세를 파싱해 요약 프롬프트 생성 + 연차필터로 action 결정.\n// [All Items] SELECT 결과(rows)와 상세조회($input)를 인덱스로 짝짓는다.\nconst rows = $('pending 배치 조회').all();\nconst details = $input.all();\nconst maxYears = Number($('설정 (Config)').first().json.maxCareerYears);\nconst out = [];\nfor (let i = 0; i < rows.length; i++) {\n  const r = rows[i].json;                 // id, source, job_id, company, title, url, min_career, max_career, attempts\n  const d = details[i]?.json || {};\n  let responsibility = '', qualifications = '', preferred = '', ok = true;\n  if (d.result) {\n    responsibility = d.result.responsibility || '';\n    qualifications = d.result.qualifications || '';\n    preferred      = d.result.preferredRequirements || '';\n  } else if (d.data?.job?.detail) {\n    const det = d.data.job.detail;\n    responsibility = det.main_tasks || det.intro || '';\n    qualifications = det.requirements || '';\n    preferred      = det.preferred_points || '';\n  } else { ok = false; }                  // 상세 파싱 실패\n\n  // 연차 보완(원티드는 상세에서)\n  let minCareer = r.min_career, maxCareer = r.max_career;\n  if (d.data?.job) {\n    if (minCareer == null) minCareer = d.data.job.annual_from ?? null;\n    if (maxCareer == null) maxCareer = d.data.job.annual_to ?? null;\n  }\n  if (maxCareer != null && maxCareer > 20) maxCareer = null;\n\n  let action;\n  if (!ok) action = 'fail';\n  else if (Number.isFinite(maxYears) && minCareer != null && minCareer > maxYears) action = 'skip';\n  else action = 'summarize';\n\n  const prompt = `제목: ${r.title}\\n회사: ${r.company}\\n\\n[주요업무]\\n${responsibility}\\n\\n[자격요건]\\n${qualifications}\\n\\n[우대사항]\\n${preferred}`;\n  out.push({ json: { id: r.id, source: r.source, job_id: r.job_id, company: r.company, title: r.title, url: r.url, attempts: r.attempts, minCareer, maxCareer, action, prompt } });\n}\nreturn out;"
+      },
+      "id": "580ea71c-a30b-4c92-a161-d7e93bfe1640",
+      "name": "처리 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b3403224-9f17-4b57-bfaf-2e7515bd0159",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "summarize",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "c742f664-023b-4d36-8032-7db83e89cfa8",
+      "name": "요약 대상?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:1234/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('설정 (Config)').first().json.model, messages: [ { role: 'system', content: '너는 채용공고를 3줄로 요약하고 핵심 자격요건을 뽑는 도우미다. 답변의 맨 마지막 줄에 반드시 \\'기술스택: 키워드1, 키워드2\\' 형식으로 공고에 등장한 기술 스택을 쉼표로 구분해 나열하라.' }, { role: 'user', content: $json.prompt } ], temperature: 0.3, max_tokens: 800, tools: [] }) }}",
+        "options": {}
+      },
+      "id": "abadd019-71a8-4e19-9994-2f1ad8475525",
+      "name": "AI 요약 (LM Studio)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        180
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 요약 성공 → done UPDATE, 실패(빈 응답) → 재시도 캡. [Each Item]\nconst m = $('처리 준비').item.json;\nconst content = $json.choices?.[0]?.message?.content;\nconst esc = (v) => v == null ? 'NULL' : `'${String(v).replace(/'/g, \"''\")}'`;\nconst num = (v) => (v == null || v === '') ? 'NULL' : (Number.isFinite(Number(v)) ? Number(v) : 'NULL');\nconst arr = (list) => { const a = (list || []).map(s => `'${String(s).replace(/'/g, \"''\")}'`); return a.length ? `ARRAY[${a.join(',')}]::text[]` : `'{}'::text[]`; };\nlet sql;\nif (content) {\n  let stacks = []; const mm = content.match(/기술스택\\s*[:：]\\s*(.+)/);\n  if (mm) stacks = mm[1].split(/[,·]/).map(s => s.trim()).filter(Boolean);\n  // 점프잇은 수집 때 넣은 tech_stacks 유지, 원티드는 요약에서 추출한 값으로 채움\n  sql = `UPDATE jobs SET status='done', summary=${esc(content)}, min_career=${num(m.minCareer)}, max_career=${num(m.maxCareer)}, tech_stacks=CASE WHEN cardinality(tech_stacks)>0 THEN tech_stacks ELSE ${arr(stacks)} END, attempts=attempts+1, updated_at=now() WHERE source=${esc(m.source)} AND job_id=${esc(m.job_id)};`;\n} else {\n  const maxAtt = Number($('설정 (Config)').first().json.maxAttempts) || 3;\n  sql = `UPDATE jobs SET status=CASE WHEN attempts+1 >= ${maxAtt} THEN 'failed' ELSE 'pending' END, attempts=attempts+1, updated_at=now() WHERE source=${esc(m.source)} AND job_id=${esc(m.job_id)};`;\n}\nreturn { json: { sql } };"
+      },
+      "id": "c2b18bce-5601-4f38-9c37-0d2368fbfdf7",
+      "name": "완료 UPDATE 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "0d45eb64-c611-4b7b-b0d3-0b0155abf6f8",
+      "name": "done UPDATE 실행",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1760,
+        180
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_ON_IMPORT",
+          "name": "Postgres (jobs)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// skip(연차제외) → 'skipped', fail(상세실패) → 재시도 캡. [Each Item]\nconst m = $json;\nconst esc = (v) => v == null ? 'NULL' : `'${String(v).replace(/'/g, \"''\")}'`;\nconst maxAtt = Number($('설정 (Config)').first().json.maxAttempts) || 3;\nlet sql;\nif (m.action === 'skip') {\n  sql = `UPDATE jobs SET status='skipped', attempts=attempts+1, updated_at=now() WHERE source=${esc(m.source)} AND job_id=${esc(m.job_id)};`;\n} else {\n  sql = `UPDATE jobs SET status=CASE WHEN attempts+1 >= ${maxAtt} THEN 'failed' ELSE 'pending' END, attempts=attempts+1, updated_at=now() WHERE source=${esc(m.source)} AND job_id=${esc(m.job_id)};`;\n}\nreturn { json: { sql } };"
+      },
+      "id": "0403f9b9-6e14-4ff2-912f-0fb139f6a9ef",
+      "name": "스킵/실패 UPDATE 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "602cf7ef-e1b2-4c27-a05c-6e2cf31b3126",
+      "name": "skip/fail UPDATE 실행",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1540,
+        440
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_ON_IMPORT",
+          "name": "Postgres (jobs)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### 워커 (Worker)\npending 배치를 꺼내 상세조회+연차필터+AI요약 →\n`done`/`skipped`/`failed`로 UPDATE. 5분마다 큐를 소비.\n\n- batchSize: 한 번에 처리할 건수\n- maxCareerYears: 낮추면 연차필터 활성(기본 99=off)\n- LLM 실패는 attempts로 재시도, maxAttempts 초과 시 failed\n- 알림(디스코드)은 별도 notifier가 done을 읽어 전송(다음 단계)",
+        "height": 240,
+        "width": 340,
+        "color": 5
+      },
+      "id": "5a06cdf8-5480-49b1-9b41-15a22fafdd36",
+      "name": "메모: 워커",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        440,
+        20
+      ]
+    }
+  ],
+  "connections": {
+    "5분마다 트리거": {
+      "main": [
+        [
+          {
+            "node": "설정 (Config)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "설정 (Config)": {
+      "main": [
+        [
+          {
+            "node": "pending 배치 조회",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "pending 배치 조회": {
+      "main": [
+        [
+          {
+            "node": "상세 조회",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "상세 조회": {
+      "main": [
+        [
+          {
+            "node": "처리 준비",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "처리 준비": {
+      "main": [
+        [
+          {
+            "node": "요약 대상?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "요약 대상?": {
+      "main": [
+        [
+          {
+            "node": "AI 요약 (LM Studio)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "스킵/실패 UPDATE 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI 요약 (LM Studio)": {
+      "main": [
+        [
+          {
+            "node": "완료 UPDATE 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "완료 UPDATE 생성": {
+      "main": [
+        [
+          {
+            "node": "done UPDATE 실행",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "스킵/실패 UPDATE 생성": {
+      "main": [
+        [
+          {
+            "node": "skip/fail UPDATE 실행",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
