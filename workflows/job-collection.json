@@ -350,7 +350,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 디스코드로 보낼 것: (1) 간단 요약 메시지 1개 + (2) 정리된 파일(.md) 첨부\nconst metaItems = $('AI 입력 준비').all();\nconst webhook   = $('설정 (Config)').first().json.discordWebhookUrl || '';\n\n// 웹후크 미설정 또는 새 공고 없으면 전송 안 함\nif (!webhook || metaItems.length === 0) return [];\n\nconst today = new Date().toISOString().slice(0, 10);\nconst lines = metaItems.map(m => `• ${m.json.company} — ${m.json.title}`);\n\nconst header = `📋 **오늘의 채용 공고 ${metaItems.length}건** (${today})\\n자세한 내용은 첨부 파일을 확인하세요 👇\\n\\n`;\n\n// 2000자 제한: 넘치면 앞부분만 넣고 \"...외 N건\"\nlet body;\nif ((header + lines.join('\\n')).length <= 1900) {\n  body = lines.join('\\n');\n} else {\n  const kept = [];\n  let len = header.length;\n  for (const l of lines) {\n    if (len + l.length + 20 > 1900) break;\n    kept.push(l); len += l.length + 1;\n  }\n  body = kept.join('\\n') + `\\n...외 ${metaItems.length - kept.length}건 (첨부 파일 참고)`;\n}\n\n// Markdown 생성 노드의 파일 바이너리를 그대로 첨부\nconst binary = $('Markdown 생성').first().binary;\nreturn [{ json: { content: header + body }, binary }];"
+        "jsCode": "// 디스코드로 보낼 것: 공고별 '클릭 가능한 임베드 카드'. 임베드 10개씩 묶어 메시지 구성.\nconst metaItems = $('AI 입력 준비').all();\nconst aiItems   = $('AI 요약 (LM Studio)').all();\nconst webhook   = $('설정 (Config)').first().json.discordWebhookUrl || '';\n\nif (!webhook || metaItems.length === 0) return [];\n\nconst today = new Date().toISOString().slice(0, 10);\n\n// ① 공고별 임베드 생성\nconst embeds = [];\nfor (let i = 0; i < metaItems.length; i++) {\n  const m = metaItems[i].json;\n  const content = aiItems[i]?.json?.choices?.[0]?.message?.content || '';\n\n  // 설명: 요약 본문에서 '기술스택:' 라인은 제거(카드 필드에 따로 넣으므로 중복 방지)\n  let desc = content.replace(/\\n?기술스택\\s*[:：].*$/m, '').trim();\n  if (desc.length > 400) desc = desc.slice(0, 400) + '…';\n\n  // 기술스택: 점프잇=구조화, 원티드=요약에서 추출\n  let stacks = (m.techStacks || []).join(', ');\n  if (!stacks) { const mm = content.match(/기술스택\\s*[:：]\\s*(.+)/); if (mm) stacks = mm[1].trim(); }\n\n  const career = [m.minCareer, m.maxCareer].filter(v => v != null).join('~') || '무관';\n\n  embeds.push({\n    title: `${m.company} — ${m.title}`.slice(0, 250),\n    url: m.url,\n    color: 5814783,\n    description: desc || '(요약 없음)',\n    fields: [\n      { name: '경력', value: String(career), inline: true },\n      { name: '기술스택', value: (stacks || '-').slice(0, 1000), inline: true },\n      { name: '출처', value: String(m.source), inline: true },\n    ],\n  });\n}\n\n// ② 임베드 10개씩 묶어 메시지로 (첫 메시지에 헤더 content)\nconst out = [];\nfor (let i = 0; i < embeds.length; i += 10) {\n  const item = { embeds: embeds.slice(i, i + 10) };\n  if (i === 0) item.content = `📋 **오늘의 채용 공고 ${embeds.length}건** (${today})`;\n  out.push({ json: item });\n}\nreturn out;"
       },
       "id": "c42f1382-0b5e-4604-a056-000464451149",
       "name": "디스코드 메시지 작성",
@@ -375,22 +375,16 @@
           ]
         },
         "sendBody": true,
-        "contentType": "multipart-form-data",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "parameterType": "formData",
-              "name": "payload_json",
-              "value": "={{ JSON.stringify({ content: $json.content }) }}"
-            },
-            {
-              "parameterType": "formBinaryData",
-              "name": "files[0]",
-              "inputDataFieldName": "data"
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.content, embeds: $json.embeds }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1000
             }
-          ]
-        },
-        "options": {}
+          }
+        }
       },
       "id": "11ba2d5f-bc1d-4b16-8e70-7e4dcd330813",
       "name": "디스코드 전송",
