@@ -52,6 +52,8 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      # 자연어검색용 읽기전용 롤 비밀번호(roles.sh가 이 값으로 롤 생성). 하드코딩 금지.
+      - JOBS_RO_PASSWORD=${JOBS_RO_PASSWORD}
       # 컨테이너/로그 시간을 KST로 (timestamp 표시 일관성). DB 세션 타임존은
       # init 후 'ALTER DATABASE ... SET timezone' 로도 고정됨(재시작에도 유지).
       - TZ=Asia/Seoul
@@ -59,8 +61,8 @@ services:
     volumes:
       # DB 데이터 영속화: 이 폴더만 있으면 컨테이너를 지워도 데이터가 남음.
       - ./data/postgres:/var/lib/postgresql/data
-      # 최초 기동 시 스키마 자동 생성 (Postgres 공식 이미지의 초기화 훅).
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # 최초 기동 시 초기화 (init.sql=스키마 → roles.sh=읽기전용롤, 알파벳순 실행).
+      - ./db:/docker-entrypoint-initdb.d:ro
     ports:
       # (선택) 호스트에서 psql·DBeaver 등으로 직접 통계 쿼리하려면 사용. 불필요하면 삭제 가능.
       - "5432:5432"
