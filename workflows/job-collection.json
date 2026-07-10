@@ -42,6 +42,12 @@
               "name": "maxCareerYears",
               "value": 3,
               "type": "number"
+            },
+            {
+              "id": "7f5a86da-3490-4d22-ae39-50619d1c1125",
+              "name": "allowedWantedCategories",
+              "value": "={{ [518, 507] }}",
+              "type": "array"
             }
           ]
         },
@@ -170,7 +176,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 두 소스(점프잇/원티드)의 목록 응답을 공통 스키마로 정규화한다.\n// 입력: Merge 노드가 합친 목록 응답 아이템들.\n//   - 점프잇 응답: json.result.positions[]\n//   - 원티드 응답: json.positions.data[] (또는 json.data[])\n// 출력: 공고 1건당 아이템 1개.\n// 주의: 비공식 API라 필드명이 바뀔 수 있음 -> 첫 실행 후 실제 응답을 보고 매핑 조정.\n\nconst stripTags = (s) => (s || '').replace(/<[^>]*>/g, '').trim();\nconst out = [];\n\nfor (const item of $input.all()) {\n  const j = item.json || {};\n\n  // ---- 점프잇 ----\n  const jumpit = j.result?.positions;\n  if (Array.isArray(jumpit)) {\n    for (const p of jumpit) {\n      out.push({ json: {\n        source: 'jumpit',\n        jobId: String(p.id ?? ''),\n        company: p.companyName ?? p.company ?? '',\n        title: stripTags(p.title),            // <span> 하이라이트 태그 제거\n        url: `https://jumpit.saramin.co.kr/position/${p.id}`,\n        minCareer: p.minCareer ?? null,\n        maxCareer: p.maxCareer ?? null,\n        techStacks: (p.techStacks || []).map(t => typeof t === 'string' ? t : (t.stack ?? t.name ?? '')),\n        locations: p.locations ?? (p.jobCity ? [p.jobCity] : []),\n        closedAt: p.closedAt ?? null,\n      }});\n    }\n    continue;\n  }\n\n  // ---- 원티드 ----\n  const wanted = j.positions?.data ?? j.data;\n  if (Array.isArray(wanted)) {\n    for (const p of wanted) {\n      out.push({ json: {\n        source: 'wanted',\n        jobId: String(p.id ?? ''),\n        company: p.company?.name ?? p.company_name ?? '',\n        title: p.position ?? p.title ?? '',\n        url: `https://www.wanted.co.kr/wd/${p.id}`,\n        minCareer: p.annual_from ?? null,\n        maxCareer: p.annual_to ?? null,\n        techStacks: (p.skill_tags || p.tags || []).map(t => typeof t === 'string' ? t : (t.title ?? t.name ?? '')),\n        locations: p.address ? [p.address] : (p.location ? [p.location] : []),\n        closedAt: p.due_time ?? null,\n      }});\n    }\n    continue;\n  }\n}\n\nreturn out;\n"
+        "jsCode": "// 두 소스(점프잇/원티드)의 목록 응답을 공통 스키마로 정규화한다.\n// 입력: Merge 노드가 합친 목록 응답 아이템들.\n//   - 점프잇 응답: json.result.positions[]\n//   - 원티드 응답: json.positions.data[] (또는 json.data[])\n// 출력: 공고 1건당 아이템 1개.\n// 주의: 비공식 API라 필드명이 바뀔 수 있음 -> 첫 실행 후 실제 응답을 보고 매핑 조정.\n\nconst stripTags = (s) => (s || '').replace(/<[^>]*>/g, '').trim();\nconst out = [];\nconst allowed = $('설정 (Config)').first().json.allowedWantedCategories || [518, 507];  // 원티드 허용 직군(화이트리스트)\n\nfor (const item of $input.all()) {\n  const j = item.json || {};\n\n  // ---- 점프잇 ----\n  const jumpit = j.result?.positions;\n  if (Array.isArray(jumpit)) {\n    for (const p of jumpit) {\n      out.push({ json: {\n        source: 'jumpit',\n        jobId: String(p.id ?? ''),\n        company: p.companyName ?? p.company ?? '',\n        title: stripTags(p.title),            // <span> 하이라이트 태그 제거\n        url: `https://jumpit.saramin.co.kr/position/${p.id}`,\n        minCareer: p.minCareer ?? null,\n        maxCareer: p.maxCareer ?? null,\n        techStacks: (p.techStacks || []).map(t => typeof t === 'string' ? t : (t.stack ?? t.name ?? '')),\n        locations: p.locations ?? (p.jobCity ? [p.jobCity] : []),\n        closedAt: p.closedAt ?? null,\n      }});\n    }\n    continue;\n  }\n\n  // ---- 원티드 ----\n  const wanted = j.positions?.data ?? j.data;\n  if (Array.isArray(wanted)) {\n    for (const p of wanted) {\n      // 직군 화이트리스트: 허용 parent_id만 통과 (분류불가=통과, 목록 비면 필터OFF)\n      const pid = p.category_tag?.parent_id;\n      if (allowed.length && pid != null && !allowed.includes(pid)) continue;\n      out.push({ json: {\n        source: 'wanted',\n        jobId: String(p.id ?? ''),\n        company: p.company?.name ?? p.company_name ?? '',\n        title: p.position ?? p.title ?? '',\n        url: `https://www.wanted.co.kr/wd/${p.id}`,\n        minCareer: p.annual_from ?? null,\n        maxCareer: p.annual_to ?? null,\n        techStacks: (p.skill_tags || p.tags || []).map(t => typeof t === 'string' ? t : (t.title ?? t.name ?? '')),\n        locations: p.address ? [p.address] : (p.location ? [p.location] : []),\n        closedAt: p.due_time ?? null,\n      }});\n    }\n    continue;\n  }\n}\n\nreturn out;\n"
       },
       "id": "7d2e3cf9-c34e-4be1-a09a-b56097949db5",
       "name": "정규화 (Normalize)",
@@ -406,6 +412,22 @@
       "position": [
         2620,
         120
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 원티드 직군(parent_id) 참고표\nConfig의 `allowedWantedCategories` 화이트리스트에 쓰는 값.\n\n**✅ 허용(기본)**\n- 518 개발\n- 507 경영·비즈니스 (PM·기획·데이터분석)\n\n**🟡 선택**\n- 511 디자인 (제품/UX 원하면 추가)\n\n**❌ 동떨어짐(미포함)**\n- 517 HR / 523 마케팅·광고 / 524 미디어\n- 530 영업 / 532 물류·무역\n\n→ Config 배열에 숫자만 추가/삭제하면 조정됨",
+        "height": 360,
+        "width": 320,
+        "color": 6
+      },
+      "id": "dcb1b3d9-3400-4612-afcc-022d1bbabc82",
+      "name": "메모: 원티드 직군표",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        480
       ]
     }
   ],
