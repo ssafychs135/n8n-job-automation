@@ -235,7 +235,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ \"model\": \"google/gemma-4-e4b\", \"messages\": [ { \"role\": \"system\", \"content\": \"너는 채용공고를 3줄로 요약하고 핵심 자격요건을 뽑는 도우미다.\" }, { \"role\": \"user\", \"content\": $json.prompt } ], \"temperature\": 0.3, \"max_tokens\": 1200 }) }}",
+        "jsonBody": "={{ JSON.stringify({ \"model\": \"kanana-1.5-8b-instruct-2505-mlx\", \"messages\": [ { \"role\": \"system\", \"content\": \"너는 채용공고를 3줄로 요약하고 핵심 자격요건을 뽑는 도우미다.\" }, { \"role\": \"user\", \"content\": $json.prompt } ], \"temperature\": 0.3, \"max_tokens\": 800, \"tools\": [] }) }}",
         "options": {
           "timeout": 600000
         }
