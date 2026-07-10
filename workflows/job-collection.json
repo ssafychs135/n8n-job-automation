@@ -363,6 +363,15 @@
               "batchInterval": 1200
             }
           }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
         }
       },
       "id": "11ba2d5f-bc1d-4b16-8e70-7e4dcd330813",
