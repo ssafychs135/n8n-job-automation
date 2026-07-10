@@ -47,3 +47,13 @@ CREATE INDEX IF NOT EXISTS idx_jobs_notify       ON jobs (status, notified_at); 
 --  · 워커 배치 집기:      SELECT * FROM jobs WHERE status='pending' ORDER BY collected_at LIMIT 20;
 --  · 기술스택 빈도 TOP:   SELECT s, count(*) FROM jobs, unnest(tech_stacks) s WHERE status='done' GROUP BY s ORDER BY 2 DESC;
 --  · 일별 수집량:         SELECT collected_at::date, count(*) FROM jobs GROUP BY 1 ORDER BY 1;
+
+-- 자연어 검색(text-to-SQL)용 읽기전용 롤. gemma가 생성한 SQL을 이 롤로만 실행 → 쓰기 원천 차단.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='jobs_ro') THEN
+    CREATE ROLE jobs_ro LOGIN PASSWORD 'change_me_readonly_pw';
+  END IF;
+END $$;
+GRANT CONNECT ON DATABASE jobs TO jobs_ro;
+GRANT USAGE ON SCHEMA public TO jobs_ro;
+GRANT SELECT ON jobs TO jobs_ro;

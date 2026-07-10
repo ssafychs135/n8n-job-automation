@@ -1,12 +1,12 @@
 {
-  "name": "04 자연어 검색 (Text-to-SQL)",
+  "name": "04 자연어 검색 (raw Text-to-SQL)",
   "nodes": [
     {
       "parameters": {
         "public": true,
         "options": {}
       },
-      "id": "a4e39cea-4bc6-465a-890d-ee18d0a65d73",
+      "id": "4b2b7253-e033-4c98-b00c-487624b30276",
       "name": "채팅 트리거",
       "type": "@n8n/n8n-nodes-langchain.chatTrigger",
       "typeVersion": 1.1,
@@ -17,9 +17,9 @@
     },
     {
       "parameters": {
-        "jsCode": "// 사용자 질문 → LLM 요청 본문(few-shot + json_schema) 구성\nconst q = $json.chatInput || $json.chatMessage || \"\";\nconst schema = { type:\"object\", additionalProperties:false, properties:{\n  keyword:{type:\"string\"}, tech:{type:\"array\",items:{type:\"string\"}}, maxCareer:{type:\"integer\"},\n  source:{type:\"string\",enum:[\"any\",\"jumpit\",\"wanted\"]}, company:{type:\"string\"}, days:{type:\"integer\"},\n  mode:{type:\"string\",enum:[\"list\",\"count\"]}, limit:{type:\"integer\"} },\n  required:[\"keyword\",\"tech\",\"maxCareer\",\"source\",\"company\",\"days\",\"mode\",\"limit\"] };\nconst body = { model:\"kanana-1.5-8b-instruct-2505-mlx\",\n  messages:[{role:\"system\",content:\"채용공고 검색 질문을 필터 JSON으로 변환한다.\\n- keyword: 직무/역할 단어(백엔드,프론트엔드,AI,PM 등). 없으면 \\\"\\\"\\n- tech: 기술스택(Redis,Kafka,Java 등). 없으면 []\\n- maxCareer: \\\"N년 이하\\\"→N, \\\"신입\\\"→0, 없으면 -1\\n- source: \\\"원티드\\\"→wanted, \\\"점프잇/잡핏\\\"→jumpit, 없으면 any\\n- company: 회사명. 없으면 \\\"\\\"\\n- days: \\\"이번 주\\\"→7, \\\"오늘\\\"→1, \\\"이번 달\\\"→30, 없으면 0\\n- mode: \\\"몇 개/개수\\\" 물으면 count, 아니면 list\\n- limit: \\\"N개 보여줘\\\"의 N, 기본 20\\n\\n예시:\\nQ: 3년 이하 백엔드 중 Redis 쓰는 곳\\nA: {\\\"keyword\\\":\\\"백엔드\\\",\\\"tech\\\":[\\\"Redis\\\"],\\\"maxCareer\\\":3,\\\"source\\\":\\\"any\\\",\\\"company\\\":\\\"\\\",\\\"days\\\":0,\\\"mode\\\":\\\"list\\\",\\\"limit\\\":20}\\nQ: 원티드에서 이번 주 AI 공고 몇 개야?\\nA: {\\\"keyword\\\":\\\"AI\\\",\\\"tech\\\":[],\\\"maxCareer\\\":-1,\\\"source\\\":\\\"wanted\\\",\\\"company\\\":\\\"\\\",\\\"days\\\":7,\\\"mode\\\":\\\"count\\\",\\\"limit\\\":20}\\nQ: 프론트엔드 10개 보여줘\\nA: {\\\"keyword\\\":\\\"프론트엔드\\\",\\\"tech\\\":[],\\\"maxCareer\\\":-1,\\\"source\\\":\\\"any\\\",\\\"company\\\":\\\"\\\",\\\"days\\\":0,\\\"mode\\\":\\\"list\\\",\\\"limit\\\":10}\"},{role:\"user\",content:q}],\n  temperature:0.1, max_tokens:300, tools:[],\n  response_format:{type:\"json_schema\", json_schema:{name:\"job_filter\", schema}} };\nreturn [{ json: { body, chatInput: q } }];"
+        "jsCode": "// 사용자 질문 → gemma raw-SQL 요청 본문 (json_schema로 {sql}만 받음)\nconst q = $json.chatInput || $json.chatMessage || \"\";\nconst body = { model:\"google/gemma-4-e4b\",\n  messages:[{role:\"system\",content:\"너는 PostgreSQL 전문가다. jobs 테이블에 대해 사용자 질문을 하나의 SELECT 쿼리로 변환한다.\\\\n테이블 jobs 컬럼: source(text jumpit|wanted), company(text), title(text), url(text), min_career(int 최소요구연차), max_career(int), tech_stacks(text[] 기술스택배열), locations(text), summary(text 요약), status(text done|pending), collected_at(timestamptz), notified_at(timestamptz)\\\\n규칙:\\\\n- SELECT 문만 생성(INSERT/UPDATE/DELETE/DROP 등 절대 금지).\\\\n- 기본적으로 status='done' 조건 포함(요약 완료된 공고만).\\\\n- 결과 LIMIT 30 이하.\\\\n- 제목/키워드 검색: title ILIKE '%키워드%'.\\\\n- 특정 기술: EXISTS (SELECT 1 FROM unnest(tech_stacks) s WHERE s ILIKE '%기술%').\\\\n- 기술 빈도/순위: SELECT unnest(tech_stacks) AS tech, count(*) ... GROUP BY tech ORDER BY count DESC.\\\\n- \\\\\\\"N년 이하\\\\\\\": (min_career IS NULL OR min_career<=N). \\\\\\\"신입\\\\\\\": min_career=0.\\\\n- 오직 SQL만 출력.\"},{role:\"user\",content:q}],\n  temperature:0.1, max_tokens:1500,\n  response_format:{type:\"json_schema\", json_schema:{name:\"q\", schema:{type:\"object\", additionalProperties:false, properties:{sql:{type:\"string\"}}, required:[\"sql\"]}}} };\nreturn [{ json: { body } }];"
       },
-      "id": "9eb4e88b-9e6e-4feb-becf-8c65a43fd19a",
+      "id": "366f3aeb-ce92-432c-971a-2f8962c70623",
       "name": "LLM 요청 준비",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -44,10 +44,12 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.body) }}",
-        "options": {}
+        "options": {
+          "timeout": 60000
+        }
       },
-      "id": "60a0d108-5d0b-4672-a016-80130722a46e",
-      "name": "필터 추출 (Kanana)",
+      "id": "e92cbec5-62b4-407e-b07d-4d742a5f04a7",
+      "name": "SQL 생성 (gemma)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -58,10 +60,10 @@
     },
     {
       "parameters": {
-        "jsCode": "// LLM이 뽑은 필터 JSON → 안전한 SELECT SQL (모든 문자열 이스케이프, SELECT만).\nlet f;\ntry { f = JSON.parse($json.choices?.[0]?.message?.content || '{}'); } catch (e) { f = {}; }\nconst esc = (s) => String(s).replace(/'/g, \"''\");\nconst where = [\"status='done'\"];\nif (f.keyword) where.push(`title ILIKE '%${esc(f.keyword)}%'`);\nif (f.company) where.push(`company ILIKE '%${esc(f.company)}%'`);\nif (Array.isArray(f.tech) && f.tech.length) {\n  const conds = f.tech.map(t => `EXISTS (SELECT 1 FROM unnest(tech_stacks) s WHERE s ILIKE '%${esc(t)}%')`);\n  where.push('(' + conds.join(' AND ') + ')');\n}\nif (Number.isInteger(f.maxCareer) && f.maxCareer >= 0) where.push(`(min_career IS NULL OR min_career <= ${f.maxCareer})`);\nif (f.source === 'jumpit' || f.source === 'wanted') where.push(`source='${f.source}'`);\nif (Number.isInteger(f.days) && f.days > 0) where.push(`collected_at > now() - interval '${f.days} days'`);\nconst limit = Math.min(Math.max(Number(f.limit) || 20, 1), 50);\nconst whereSql = where.join(' AND ');\nconst sql = (f.mode === 'count')\n  ? `SELECT count(*) AS cnt FROM jobs WHERE ${whereSql};`\n  : `SELECT source, title, company, min_career, max_career, tech_stacks, url, summary FROM jobs WHERE ${whereSql} ORDER BY collected_at DESC LIMIT ${limit};`;\nreturn [{ json: { sql, mode: f.mode || 'list', filter: f } }];"
+        "jsCode": "// [2차 방어] gemma가 생성한 SQL 검증. 위반 시 안내 메시지를 반환하는 SELECT로 대체.\nlet sql = '';\ntry { sql = JSON.parse($json.choices?.[0]?.message?.content || '{}').sql || ''; } catch (e) {}\nsql = String(sql).trim().replace(/;+\\s*$/, '');   // 끝 세미콜론 제거\n\nconst guide = (msg) => [{ json: { sql: `SELECT '${msg.replace(/'/g, \"''\")}' AS 안내` } }];\n\nif (!/^\\s*SELECT\\b/i.test(sql)) return guide('SELECT 쿼리만 실행할 수 있어요.');\nif (/\\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|REVOKE|TRUNCATE|COPY|MERGE)\\b/i.test(sql))\n  return guide('허용되지 않는 명령이 포함돼 실행하지 않았어요.');\nif (/;/.test(sql)) return guide('한 번에 하나의 쿼리만 실행할 수 있어요.');\n// LIMIT 강제(없으면 30, 있으면 50 이하로 캡)\nif (!/\\bLIMIT\\s+\\d+/i.test(sql)) sql += ' LIMIT 30';\nelse sql = sql.replace(/\\bLIMIT\\s+(\\d+)/i, (m, n) => 'LIMIT ' + Math.min(Number(n), 50));\n\nreturn [{ json: { sql } }];"
       },
-      "id": "94b352a9-a6c7-4933-b858-221f02d0ff43",
-      "name": "SQL 생성",
+      "id": "5f1dc764-eb21-4b63-9fa8-bfeabd22ac6c",
+      "name": "SQL 검증",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -75,8 +77,8 @@
         "query": "={{ $json.sql }}",
         "options": {}
       },
-      "id": "66488290-49c5-4db3-b2dd-5261f033336f",
-      "name": "검색 (Postgres)",
+      "id": "973b25ce-2d93-40a3-8d4d-c72814d18939",
+      "name": "검색 (읽기전용)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
@@ -86,15 +88,16 @@
       "credentials": {
         "postgres": {
           "id": "REPLACE_ON_IMPORT",
-          "name": "Postgres (jobs)"
+          "name": "Postgres (readonly)"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "// Postgres 결과 → 챗 응답 텍스트\nconst mode = $('SQL 생성').first().json.mode;\nconst rows = $input.all();\nlet text;\nif (mode === 'count') {\n  text = `🔎 조건에 맞는 공고: **${rows[0]?.json?.cnt ?? 0}건**`;\n} else if (rows.length === 0) {\n  text = '🔎 조건에 맞는 공고가 없어요. (요약 완료된 공고만 검색됩니다)';\n} else {\n  text = `🔎 **${rows.length}건** 찾았어요\\n\\n`;\n  for (const r of rows) {\n    const m = r.json;\n    const career = [m.min_career, m.max_career].filter(v => v != null).join('~') || '무관';\n    const stacks = Array.isArray(m.tech_stacks) ? m.tech_stacks.join(', ') : '';\n    text += `**${m.company} — ${m.title}** (경력 ${career})\\n${stacks || '-'}\\n${m.url}\\n\\n`;\n  }\n}\nreturn [{ json: { output: text, text } }];"
+        "jsCode": "// 결과 포맷: 쿼리실패 / 안내메시지 / 공고목록 / 집계표\nconst rows = $input.all();\nlet text;\nif (rows.length === 0) {\n  text = '🔎 결과가 없어요.';\n} else {\n  const first = rows[0].json;\n  const keys = Object.keys(first);\n  if ('sql' in first || 'error' in first) {                 // Postgres 실행 실패(문법오류 등)\n    text = '⚠️ 쿼리를 실행하지 못했어요. 질문을 조금 다르게 표현해 주세요.';\n  } else if (keys.length === 1 && keys[0] === '안내') {       // 검증 차단 안내\n    text = '⚠️ ' + first['안내'];\n  } else if ('title' in first) {                             // 공고 목록\n    text = `🔎 **${rows.length}건**\\n\\n`;\n    for (const r of rows) {\n      const m = r.json;\n      const career = [m.min_career, m.max_career].filter(v => v != null).join('~') || '무관';\n      const st = Array.isArray(m.tech_stacks) ? m.tech_stacks.join(', ') : '';\n      text += `**${m.company || ''} — ${m.title}** (경력 ${career})\\n${st || '-'}\\n${m.url || ''}\\n\\n`;\n    }\n  } else {                                                    // 집계/기타\n    text = `🔎 **${rows.length}행**\\n\\n`;\n    for (const r of rows) text += Object.entries(r.json).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' · ') + '\\n';\n  }\n}\nreturn [{ json: { output: text, text } }];"
       },
-      "id": "3b2e4cc3-35e7-4fe4-8520-9a04254fa3d8",
+      "id": "196474e5-f012-474a-a6a2-87072f27f61c",
       "name": "응답 포맷",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -105,18 +108,18 @@
     },
     {
       "parameters": {
-        "content": "### 자연어 검색 (Text-to-SQL)\nn8n Chat에서 질문하면 → Kanana가 구조화 필터로 변환\n→ 안전한 SELECT SQL 생성 → jobs 검색 → 결과 응답.\n\n예: \"3년 이하 백엔드 중 Redis 쓰는 곳\", \"원티드 AI 공고 몇 개?\"\n구조화 필터 방식이라 SQL 인젝션 불가(SELECT만).",
-        "height": 180,
-        "width": 340,
+        "content": "### 자연어 검색 (raw Text-to-SQL)\ngemma-4-e4b가 질문→SELECT SQL 생성 → 검증 → 읽기전용 롤로 실행.\n집계 질문도 가능: \"기술스택 TOP10\", \"회사별 공고 수\", \"연차별 분포\"\n\n**안전 2중:**\n1. 읽기전용 DB 롤(jobs_ro): SELECT만 가능, 쓰기 원천 차단\n2. SQL 검증 노드: SELECT 아니거나 위험키워드면 실행 안 함\n\n자격증명: 검색 노드는 'Postgres (readonly)' 사용",
+        "height": 220,
+        "width": 360,
         "color": 7
       },
-      "id": "45e9ec6e-85ad-448f-b9fb-7e2177c19110",
+      "id": "7e6f9c64-874b-4a82-ae2d-bd12d3c46388",
       "name": "메모: 검색",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
         220,
-        60
+        40
       ]
     }
   ],
@@ -136,36 +139,36 @@
       "main": [
         [
           {
-            "node": "필터 추출 (Kanana)",
+            "node": "SQL 생성 (gemma)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "필터 추출 (Kanana)": {
+    "SQL 생성 (gemma)": {
       "main": [
         [
           {
-            "node": "SQL 생성",
+            "node": "SQL 검증",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "SQL 생성": {
+    "SQL 검증": {
       "main": [
         [
           {
-            "node": "검색 (Postgres)",
+            "node": "검색 (읽기전용)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "검색 (Postgres)": {
+    "검색 (읽기전용)": {
       "main": [
         [
           {
