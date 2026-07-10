@@ -183,7 +183,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 필터 전용: 이미 처리(요약 성공)한 공고ID면 제외하고 새 공고만 통과시킨다.\n// seen 기록은 여기서 하지 않고 'Markdown 생성' 노드에서 요약 성공 후 수행한다.\n// → 요약에 실패한 공고는 seen에 안 남아 다음 실행에 자동 재시도된다.\nconst staticData = $getWorkflowStaticData('global');\nconst seen = staticData.seenJobIds || {};\n\nconst fresh = [];\nfor (const item of $input.all()) {\n  const key = `${item.json.source}:${item.json.jobId}`;\n  if (!seen[key]) fresh.push(item);   // 통과만; 기록은 성공 후에\n}\nreturn fresh;"
+        "jsCode": "// 필터 전용: 중복 공고를 제외하고 새 공고만 통과시킨다. 두 가지 중복을 모두 처리:\n//  ① 이전 실행에서 요약 성공한 공고 (static data의 seen)\n//  ② 이번 실행 내 중복 (여러 키워드에 걸린 같은 공고 — OR 검색이라 생김)\n// seen 기록(성공분)은 'Markdown 생성'에서 수행한다.\nconst staticData = $getWorkflowStaticData('global');\nconst seen = staticData.seenJobIds || {};\nconst seenThisRun = new Set();\n\nconst fresh = [];\nfor (const item of $input.all()) {\n  const key = `${item.json.source}:${item.json.jobId}`;\n  if (seen[key] || seenThisRun.has(key)) continue;   // 이전 실행 or 이번 실행 내 중복 제외\n  seenThisRun.add(key);\n  fresh.push(item);\n}\nreturn fresh;"
       },
       "id": "e721df54-0df5-4f2b-ad45-575e36f8bbea",
       "name": "중복 제거 (Dedup)",
