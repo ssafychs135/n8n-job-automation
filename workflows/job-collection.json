@@ -235,8 +235,10 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ \"model\": \"gemma-4-e4b-it\", \"messages\": [ { \"role\": \"system\", \"content\": \"너는 채용공고를 3줄로 요약하고 핵심 자격요건을 뽑는 도우미다.\" }, { \"role\": \"user\", \"content\": $json.prompt } ], \"temperature\": 0.3 }) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({ \"model\": \"google/gemma-4-e4b\", \"messages\": [ { \"role\": \"system\", \"content\": \"너는 채용공고를 3줄로 요약하고 핵심 자격요건을 뽑는 도우미다.\" }, { \"role\": \"user\", \"content\": $json.prompt } ], \"temperature\": 0.3, \"max_tokens\": 1200 }) }}",
+        "options": {
+          "timeout": 600000
+        }
       },
       "id": "a7371973-199b-4441-a8f3-350add986ba5",
       "name": "AI 요약 (LM Studio)",
@@ -246,7 +248,10 @@
         1980,
         300
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
