@@ -52,6 +52,10 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      # 컨테이너/로그 시간을 KST로 (timestamp 표시 일관성). DB 세션 타임존은
+      # init 후 'ALTER DATABASE ... SET timezone' 로도 고정됨(재시작에도 유지).
+      - TZ=Asia/Seoul
+      - PGTZ=Asia/Seoul
     volumes:
       # DB 데이터 영속화: 이 폴더만 있으면 컨테이너를 지워도 데이터가 남음.
       - ./data/postgres:/var/lib/postgresql/data

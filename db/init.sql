@@ -6,6 +6,9 @@
 --   워커   → status='pending' 배치로 꺼내 상세조회+요약 → 'done' (연차필터 제외=skipped, 실패=failed)
 -- 이 구조로 최초 대량 풀스캔도 재개 가능·레이트리밋되며 처리된다.
 
+-- DB 표시 타임존을 KST로 고정 (TIMESTAMPTZ는 UTC 저장, 표시만 변환됨). 재시작에도 유지.
+DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET timezone TO ''Asia/Seoul''', current_database()); END $$;
+
 CREATE TABLE IF NOT EXISTS jobs (
   id            BIGSERIAL PRIMARY KEY,
   source        TEXT        NOT NULL,          -- 'wanted' | 'jumpit'
