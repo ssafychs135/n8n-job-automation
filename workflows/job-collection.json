@@ -30,6 +30,12 @@
               "name": "keywords",
               "value": "={{ [\"백엔드\", \"Node.js\"] }}",
               "type": "array"
+            },
+            {
+              "id": "da37155c-2ecf-4093-bfcf-0e2491fe98df",
+              "name": "discordWebhookUrl",
+              "value": "",
+              "type": "string"
             }
           ]
         },
@@ -329,6 +335,63 @@
         1900,
         20
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 새로 요약된 공고를 디스코드 메시지(2000자 제한)로 묶는다.\nconst metaItems = $('AI 입력 준비').all();\nconst aiItems   = $('AI 요약 (LM Studio)').all();\nconst webhook   = $('설정 (Config)').first().json.discordWebhookUrl || '';\n\nconst today = new Date().toISOString().slice(0, 10);\nconst lines = [];\nfor (let i = 0; i < metaItems.length; i++) {\n  const m = metaItems[i].json;\n  const content = aiItems[i]?.json?.choices?.[0]?.message?.content || '';\n  let stacks = (m.techStacks || []).join(', ');\n  if (!stacks) { const mm = content.match(/기술스택\\s*[:：]\\s*(.+)/); if (mm) stacks = mm[1].trim(); }\n  const career = [m.minCareer, m.maxCareer].filter(v => v != null).join('~') || '무관';\n  lines.push(`**${m.company}** — ${m.title}\\n경력 ${career} · ${stacks || '-'}\\n${m.url}`);\n}\n\n// 웹후크 미설정이거나 새 공고 없으면 전송 안 함\nif (!webhook || lines.length === 0) return [];\n\n// 헤더 + 2000자 제한에 맞춰 청크 분할\nconst header = `📋 **오늘의 채용 공고 ${lines.length}건** (${today})`;\nconst chunks = []; let buf = header;\nfor (const l of lines) {\n  if ((buf + '\\n\\n' + l).length > 1900) { chunks.push(buf); buf = l; }\n  else { buf = buf + '\\n\\n' + l; }\n}\nif (buf) chunks.push(buf);\n\nreturn chunks.map(c => ({ json: { content: c, webhook } }));"
+      },
+      "id": "c42f1382-0b5e-4604-a056-000464451149",
+      "name": "디스코드 메시지 작성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.content }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1200
+            }
+          }
+        }
+      },
+      "id": "11ba2d5f-bc1d-4b16-8e70-7e4dcd330813",
+      "name": "디스코드 전송",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "content": "### 디스코드 알림\nConfig 노드의 discordWebhookUrl에 디스코드 웹후크 URL을 넣으면\n요약 결과가 디스코드로 전송됩니다. 비어있으면 전송 스킵.",
+        "height": 140,
+        "width": 300
+      },
+      "id": "486b93b4-2a0c-4829-aee0-785c622f91cc",
+      "name": "메모: 디스코드",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2620,
+        120
+      ]
     }
   ],
   "connections": {
@@ -463,6 +526,28 @@
         [
           {
             "node": "파일 저장",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "파일 저장": {
+      "main": [
+        [
+          {
+            "node": "디스코드 메시지 작성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "디스코드 메시지 작성": {
+      "main": [
+        [
+          {
+            "node": "디스코드 전송",
             "type": "main",
             "index": 0
           }
