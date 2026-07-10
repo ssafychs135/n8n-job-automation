@@ -350,7 +350,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 새로 요약된 공고를 디스코드 메시지(2000자 제한)로 묶는다.\nconst metaItems = $('AI 입력 준비').all();\nconst aiItems   = $('AI 요약 (LM Studio)').all();\nconst webhook   = $('설정 (Config)').first().json.discordWebhookUrl || '';\n\nconst today = new Date().toISOString().slice(0, 10);\nconst lines = [];\nfor (let i = 0; i < metaItems.length; i++) {\n  const m = metaItems[i].json;\n  const content = aiItems[i]?.json?.choices?.[0]?.message?.content || '';\n  let stacks = (m.techStacks || []).join(', ');\n  if (!stacks) { const mm = content.match(/기술스택\\s*[:：]\\s*(.+)/); if (mm) stacks = mm[1].trim(); }\n  const career = [m.minCareer, m.maxCareer].filter(v => v != null).join('~') || '무관';\n  lines.push(`**${m.company}** — ${m.title}\\n경력 ${career} · ${stacks || '-'}\\n${m.url}`);\n}\n\n// 웹후크 미설정이거나 새 공고 없으면 전송 안 함\nif (!webhook || lines.length === 0) return [];\n\n// 헤더 + 2000자 제한에 맞춰 청크 분할\nconst header = `📋 **오늘의 채용 공고 ${lines.length}건** (${today})`;\nconst chunks = []; let buf = header;\nfor (const l of lines) {\n  if ((buf + '\\n\\n' + l).length > 1900) { chunks.push(buf); buf = l; }\n  else { buf = buf + '\\n\\n' + l; }\n}\nif (buf) chunks.push(buf);\n\nreturn chunks.map(c => ({ json: { content: c, webhook } }));"
+        "jsCode": "// 디스코드로 보낼 것: (1) 간단 요약 메시지 1개 + (2) 정리된 파일(.md) 첨부\nconst metaItems = $('AI 입력 준비').all();\nconst webhook   = $('설정 (Config)').first().json.discordWebhookUrl || '';\n\n// 웹후크 미설정 또는 새 공고 없으면 전송 안 함\nif (!webhook || metaItems.length === 0) return [];\n\nconst today = new Date().toISOString().slice(0, 10);\nconst lines = metaItems.map(m => `• ${m.json.company} — ${m.json.title}`);\n\nconst header = `📋 **오늘의 채용 공고 ${metaItems.length}건** (${today})\\n자세한 내용은 첨부 파일을 확인하세요 👇\\n\\n`;\n\n// 2000자 제한: 넘치면 앞부분만 넣고 \"...외 N건\"\nlet body;\nif ((header + lines.join('\\n')).length <= 1900) {\n  body = lines.join('\\n');\n} else {\n  const kept = [];\n  let len = header.length;\n  for (const l of lines) {\n    if (len + l.length + 20 > 1900) break;\n    kept.push(l); len += l.length + 1;\n  }\n  body = kept.join('\\n') + `\\n...외 ${metaItems.length - kept.length}건 (첨부 파일 참고)`;\n}\n\n// Markdown 생성 노드의 파일 바이너리를 그대로 첨부\nconst binary = $('Markdown 생성').first().binary;\nreturn [{ json: { content: header + body }, binary }];"
       },
       "id": "c42f1382-0b5e-4604-a056-000464451149",
       "name": "디스코드 메시지 작성",
@@ -364,18 +364,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $json.webhook }}",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ content: $json.content }) }}",
-        "options": {
-          "batching": {
-            "batch": {
-              "batchSize": 1,
-              "batchInterval": 1200
-            }
-          }
-        },
+        "url": "={{ $('설정 (Config)').first().json.discordWebhookUrl }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -384,7 +373,24 @@
               "value": "Mozilla/5.0"
             }
           ]
-        }
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formData",
+              "name": "payload_json",
+              "value": "={{ JSON.stringify({ content: $json.content }) }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "files[0]",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
       },
       "id": "11ba2d5f-bc1d-4b16-8e70-7e4dcd330813",
       "name": "디스코드 전송",
