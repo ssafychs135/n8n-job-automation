@@ -36,6 +36,12 @@
               "name": "discordWebhookUrl",
               "value": "",
               "type": "string"
+            },
+            {
+              "id": "26792bb0-6cff-47d1-b4b5-ea242f097a97",
+              "name": "maxCareerYears",
+              "value": 3,
+              "type": "number"
             }
           ]
         },
@@ -215,7 +221,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// 상세(JD) 응답을 소스별로 파싱해 LLM 프롬프트를 만든다.\n// 목록 단계의 공통 스키마(회사/제목/링크 등)는 Dedup 노드에서 그대로 가져온다.\n// (runOnceForEachItem 모드: 한 건씩 처리)\n\nconst meta = $('중복 제거 (Dedup)').item.json;   // 같은 공고의 정규화 데이터\nconst d = $json;                                 // 상세 API 응답\n\nlet responsibility = '', qualifications = '', preferred = '';\nif (d.result) {                       // 점프잇 상세\n  responsibility = d.result.responsibility || '';\n  qualifications = d.result.qualifications || '';\n  preferred      = d.result.preferredRequirements || '';\n} else if (d.data?.job?.detail) {     // 원티드 상세 (필드명은 실측 후 조정 필요)\n  const det = d.data.job.detail;\n  responsibility = det.main_tasks || det.intro || '';\n  qualifications = det.requirements || '';\n  preferred      = det.preferred_points || '';\n}\n\nconst prompt = `제목: ${meta.title}\\n회사: ${meta.company}\\n\\n[주요업무]\\n${responsibility}\\n\\n[자격요건]\\n${qualifications}\\n\\n[우대사항]\\n${preferred}`;\n\nreturn { json: { ...meta, responsibility, qualifications, preferred, prompt } };\n"
+        "jsCode": "// 상세(JD) 응답을 소스별로 파싱해 LLM 프롬프트를 만들고, 연차 상한으로 필터링한다.\n// (runOnceForEachItem 모드: []를 반환하면 해당 공고는 스킵되어 AI 요약/출력 안 됨)\n\nconst meta = $('중복 제거 (Dedup)').item.json;   // 같은 공고의 정규화 데이터\nconst d = $json;                                 // 상세 API 응답\n\nlet responsibility = '', qualifications = '', preferred = '';\nif (d.result) {                       // 점프잇 상세\n  responsibility = d.result.responsibility || '';\n  qualifications = d.result.qualifications || '';\n  preferred      = d.result.preferredRequirements || '';\n} else if (d.data?.job?.detail) {     // 원티드 상세\n  const det = d.data.job.detail;\n  responsibility = det.main_tasks || det.intro || '';\n  qualifications = det.requirements || '';\n  preferred      = det.preferred_points || '';\n}\n\n// 연차 보완: 점프잇=목록 minCareer/maxCareer, 원티드=상세 annual_from/to (원티드 '무관' 표시도 해결)\nlet minCareer = meta.minCareer;\nlet maxCareer = meta.maxCareer;\nif (d.data?.job) {\n  if (minCareer == null) minCareer = d.data.job.annual_from ?? null;\n  if (maxCareer == null) maxCareer = d.data.job.annual_to ?? null;\n}\n// 원티드 상한 sentinel(100 등)은 '상한 없음'으로 정리\nif (maxCareer != null && maxCareer > 20) maxCareer = null;\n\n// 연차 필터: 공고의 최소 요구 경력이 상한 초과면 스킵.\n//  - 신입/무관(minCareer null 또는 0)은 항상 통과\n//  - Config의 maxCareerYears가 비어있으면(NaN) 필터 OFF\nconst maxYears = Number($('설정 (Config)').first().json.maxCareerYears);\nif (Number.isFinite(maxYears) && minCareer != null && minCareer > maxYears) {\n  return [];\n}\n\nconst prompt = `제목: ${meta.title}\\n회사: ${meta.company}\\n\\n[주요업무]\\n${responsibility}\\n\\n[자격요건]\\n${qualifications}\\n\\n[우대사항]\\n${preferred}`;\n\nreturn { json: { ...meta, minCareer, maxCareer, responsibility, qualifications, preferred, prompt } };"
       },
       "id": "4fc6925e-013c-4879-8489-971e1625eb4f",
       "name": "AI 입력 준비",
