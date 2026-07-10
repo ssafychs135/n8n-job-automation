@@ -1,0 +1,45 @@
+# n8n 채용 공고 수집·요약 워크플로우용 로컬 셀프호스팅 구성
+# 실행: docker compose up -d  (같은 폴더의 .env 값을 자동으로 읽어들임)
+
+services:
+  n8n:
+    # n8n 공식 이미지. arm64/amd64 멀티아치라 Apple Silicon(M5)에서도 그대로 동작.
+    # 재현성을 위해 버전 태그를 고정(pin)함. 업그레이드는 이 숫자만 올리면 됨.
+    image: docker.n8n.io/n8nio/n8n:1.104.0
+
+    # 컨테이너가 죽거나 맥을 재부팅해도 자동 재기동. (수동으로 stop 한 경우엔 안 켜짐)
+    restart: unless-stopped
+
+    ports:
+      # 호스트 5678 → 컨테이너 5678. 브라우저에서 http://localhost:5678 로 접속.
+      - "5678:5678"
+
+    extra_hosts:
+      # 컨테이너 안에서 host.docker.internal 이름으로 "맥 호스트"를 가리키게 함.
+      # 호스트에서 도는 LM Studio(OpenAI 호환 서버, :1234)에 접속하기 위해 필요.
+      # Linux 등 일부 플랫폼은 기본 제공이 안 되므로 host-gateway 로 명시해 이식성 확보.
+      - "host.docker.internal:host-gateway"
+
+    environment:
+      # 스케줄(cron) 트리거가 한국 시간 기준으로 돌도록 타임존 지정.
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - TZ=${TZ}
+      # n8n이 스스로를 어떤 호스트/포트로 인식할지. (웹훅 URL 생성 등에 사용)
+      - N8N_HOST=${N8N_HOST}
+      - N8N_PORT=${N8N_PORT}
+      # HTTPS 없이 http://localhost 로 로그인 가능하게 함(로컬 개발용).
+      # 운영에 배포할 땐 반드시 HTTPS + true 로 되돌릴 것.
+      - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE}
+      # 코드/AI 노드 실행을 별도 러너 프로세스로 분리(최신 n8n 권장 설정).
+      - N8N_RUNNERS_ENABLED=true
+
+    volumes:
+      # n8n 상태 영속화: SQLite DB, 자격증명(credentials), 워크플로우가 여기에 저장됨.
+      # 이 폴더만 있으면 컨테이너를 지워도 데이터가 남음.
+      - ./data/n8n:/home/node/.n8n
+      # 워크플로우가 만든 Markdown 결과물을 호스트에서 바로 열어볼 수 있게 매핑.
+      - ./data/output:/data/output
+
+# 참고: Ollama 같은 별도 LLM 서비스를 두지 않는다.
+# LLM(Gemma 4 E4B, MLX)은 Metal 직접 접근이 필요해 Docker 안에서 못 돌기 때문에
+# 맥 "호스트"에서 LM Studio로 실행하고, n8n은 host.docker.internal:1234 로 접속한다.
