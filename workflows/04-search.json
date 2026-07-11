@@ -95,7 +95,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 결과 포맷 + 마크다운 이스케이프 + Setext heading 방지(빈 줄에 - 안 씀)\nconst rows = $input.all();\nconst md = (s) => String(s == null ? '' : s).replace(/[\\\\`*_~#|>\\[\\]]/g, '\\\\$&').replace(/\\r?\\n/g, ' ').trim();\nconst val = (v) => Array.isArray(v) ? v.map(md).join(', ') : (v === '' || v == null ? '(미분류)' : md(v));\nlet text;\n\nif (rows.length === 0) {\n  text = '🔎 결과가 없어요.';\n} else {\n  const first = rows[0].json;\n  const keys = Object.keys(first);\n\n  if ('sql' in first || 'error' in first) {\n    text = '⚠️ 쿼리를 실행하지 못했어요. 질문을 조금 다르게 표현해 주세요.';\n  } else if (keys.length === 1 && keys[0] === '안내') {\n    text = '⚠️ ' + md(first['안내']);\n  } else if ('title' in first) {\n    text = `🔎 **${rows.length}건**\\n\\n`;\n    for (const r of rows) {\n      const m = r.json;\n      const career = [m.min_career, m.max_career].filter(v => v != null).join('~') || '무관';\n      const st = Array.isArray(m.tech_stacks) ? m.tech_stacks.filter(Boolean).map(md).join(', ') : '';\n      text += `**${md(m.company)} — ${md(m.title)}**  ·  경력 ${career}\\n`;\n      if (st) text += `${st}\\n`;                       // 기술스택 없으면 줄 자체를 생략(‘-’ 금지: Setext heading 방지)\n      if (m.url) text += `${m.url}\\n`;\n      text += '\\n';\n    }\n  } else if (keys.length === 1) {\n    text = `🔎 결과: **${val(first[keys[0]])}**`;\n  } else {\n    const numKey = keys.find(k => rows.every(r => typeof r.json[k] === 'number' || /^-?\\d+(\\.\\d+)?$/.test(String(r.json[k]))));\n    const labelKey = keys.find(k => k !== numKey);\n    if (keys.length === 2 && numKey && labelKey) {\n      text = `📊 **${rows.length}개**\\n\\n`;\n      rows.forEach((r, i) => { text += `${i + 1}. **${val(r.json[labelKey])}** — ${r.json[numKey]}\\n`; });\n    } else {\n      text = `🔎 **${rows.length}행**\\n\\n| ${keys.map(md).join(' | ')} |\\n| ${keys.map(() => '---').join(' | ')} |\\n`;\n      for (const r of rows) text += '| ' + keys.map(k => val(r.json[k])).join(' | ') + ' |\\n';\n    }\n  }\n}\nreturn [{ json: { output: text, text } }];"
+        "jsCode": "// 결과 포맷 + 마크다운 이스케이프 + Setext 방지 + 파일요청 안내\nconst rows = $input.all();\nconst md = (s) => String(s == null ? '' : s).replace(/[\\\\`*_~#|>\\[\\]]/g, '\\\\$&').replace(/\\r?\\n/g, ' ').trim();\nconst val = (v) => Array.isArray(v) ? v.map(md).join(', ') : (v === '' || v == null ? '(미분류)' : md(v));\nlet text;\nif (rows.length === 0) { text = '🔎 결과가 없어요.'; }\nelse {\n  const first = rows[0].json; const keys = Object.keys(first);\n  if ('sql' in first || 'error' in first) text = '⚠️ 쿼리를 실행하지 못했어요. 질문을 조금 다르게 표현해 주세요.';\n  else if (keys.length === 1 && keys[0] === '안내') text = '⚠️ ' + md(first['안내']);\n  else if ('title' in first) {\n    text = `🔎 **${rows.length}건**\\n\\n`;\n    for (const r of rows) {\n      const m = r.json;\n      const career = [m.min_career, m.max_career].filter(v => v != null).join('~') || '무관';\n      const st = Array.isArray(m.tech_stacks) ? m.tech_stacks.filter(Boolean).map(md).join(', ') : '';\n      text += `**${md(m.company)} — ${md(m.title)}**  ·  경력 ${career}\\n`;\n      if (st) text += `${st}\\n`;\n      if (m.url) text += `${m.url}\\n`;\n      text += '\\n';\n    }\n  } else if (keys.length === 1) text = `🔎 결과: **${val(first[keys[0]])}**`;\n  else {\n    const numKey = keys.find(k => rows.every(r => typeof r.json[k] === 'number' || /^-?\\d+(\\.\\d+)?$/.test(String(r.json[k]))));\n    const labelKey = keys.find(k => k !== numKey);\n    if (keys.length === 2 && numKey && labelKey) { text = `📊 **${rows.length}개**\\n\\n`; rows.forEach((r,i)=>{ text += `${i+1}. **${val(r.json[labelKey])}** — ${r.json[numKey]}\\n`; }); }\n    else { text = `🔎 **${rows.length}행**\\n\\n| ${keys.map(md).join(' | ')} |\\n| ${keys.map(()=>'---').join(' | ')} |\\n`; for (const r of rows) text += '| ' + keys.map(k=>val(r.json[k])).join(' | ') + ' |\\n'; }\n  }\n}\n// 파일 요청이면 안내 추가\nconst q = ($('채팅 트리거').first().json.chatInput) || '';\nif (/(파일|문서|rtf|워드|다운로드|저장|받아|내려받)/i.test(q)) text += '\\n📎 결과를 RTF 파일로 저장하고 디스코드로 보냈어요.';\nreturn [{ json: { output: text, text } }];"
       },
       "id": "196474e5-f012-474a-a6a2-87072f27f61c",
       "name": "응답 포맷",
@@ -108,7 +108,7 @@
     },
     {
       "parameters": {
-        "content": "### 자연어 검색 (raw Text-to-SQL)\ngemma-4-e4b가 질문→SELECT SQL 생성 → 검증 → 읽기전용 롤로 실행.\n집계 질문도 가능: \"기술스택 TOP10\", \"회사별 공고 수\", \"연차별 분포\"\n\n**안전 2중:**\n1. 읽기전용 DB 롤(jobs_ro): SELECT만 가능, 쓰기 원천 차단\n2. SQL 검증 노드: SELECT 아니거나 위험키워드면 실행 안 함\n\n자격증명: 검색 노드는 'Postgres (readonly)' 사용",
+        "content": "### 자연어 검색 (raw Text-to-SQL)\ngemma가 질문→SELECT → 검증 → 읽기전용 롤 실행 → 응답.\n집계 질문도 가능(TOP N, 회사별 등).\n\n**파일 export**: 질문에 '파일/문서/rtf/저장' 있으면\n→ RTF 생성 → data/output 저장 + 디스코드 전송.\n(Config의 discordWebhookUrl 입력 필요)",
         "height": 220,
         "width": 360,
         "color": 7
@@ -121,10 +121,118 @@
         220,
         40
       ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ed4c9b77-ec70-430c-8673-8de2e0fdc26f",
+              "name": "discordWebhookUrl",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "b94ec9d5-5ac8-4a73-95ea-f57d285d0ae2",
+      "name": "설정 (Config)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 질문에 파일/문서/rtf 요청이 있을 때만 RTF 파일 생성. 아니면 [] (파일 안 만듦).\nconst q = ($('채팅 트리거').first().json.chatInput) || '';\nif (!/(파일|문서|rtf|워드|다운로드|저장|받아|내려받)/i.test(q)) return [];\nconst rows = $input.all();\nif (rows.length === 0) return [];\n\n// RTF 이스케이프: \\ { } 및 비ASCII(한글 등) 유니코드 이스케이프(\\uNNNN?)\nconst esc = (s) => {\n  let out = '';\n  for (const ch of String(s == null ? '' : s)) {\n    const code = ch.codePointAt(0);\n    if (ch === '\\\\') out += '\\\\\\\\';\n    else if (ch === '{') out += '\\\\{';\n    else if (ch === '}') out += '\\\\}';\n    else if (code > 127) { const c = code > 32767 ? code - 65536 : code; out += '\\\\u' + c + '?'; }\n    else out += ch;\n  }\n  return out;\n};\n\nlet bodyRtf = '';\nconst isJobs = 'title' in rows[0].json;\nif (isJobs) {\n  bodyRtf += '{\\\\fs36\\\\b ' + esc('채용 공고 검색 결과 (' + rows.length + '건)') + '}\\\\par\\\\par ';\n  for (const r of rows) {\n    const m = r.json;\n    const career = [m.min_career, m.max_career].filter(v => v != null).join('~') || '무관';\n    const st = Array.isArray(m.tech_stacks) ? m.tech_stacks.filter(Boolean).join(', ') : '';\n    bodyRtf += '{\\\\b ' + esc((m.company||'') + ' — ' + (m.title||'')) + '}  (' + esc('경력 ' + career) + ')\\\\par ';\n    if (st) bodyRtf += esc(st) + '\\\\par ';\n    if (m.url) bodyRtf += esc(m.url) + '\\\\par ';\n    bodyRtf += '\\\\par ';\n  }\n} else {\n  const keys = Object.keys(rows[0].json);\n  bodyRtf += '{\\\\fs36\\\\b ' + esc('검색 결과 (' + rows.length + '행)') + '}\\\\par\\\\par ';\n  bodyRtf += '{\\\\b ' + esc(keys.join(' | ')) + '}\\\\par ';\n  for (const r of rows) bodyRtf += esc(keys.map(k => Array.isArray(r.json[k]) ? r.json[k].join(', ') : r.json[k]).join(' | ')) + '\\\\par ';\n}\nconst rtf = '{\\\\rtf1\\\\ansi\\\\ansicpg949\\\\deff0{\\\\fonttbl{\\\\f0\\\\fnil Malgun Gothic;}}\\\\f0\\\\fs24 ' + bodyRtf + '}';\n\nconst ts = new Date().toISOString().slice(0,16).replace(/[-:T]/g,'');\nconst filename = 'search-' + ts + '.rtf';\nconst binary = await this.helpers.prepareBinaryData(Buffer.from(rtf, 'utf-8'), filename, 'application/rtf');\nreturn [{ json: { filename }, binary: { data: binary } }];"
+      },
+      "id": "db0fbf6a-4b0f-4d35-8da3-ad99cb7afff6",
+      "name": "RTF 분기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/data/output/{{ $json.filename }}",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "ea129dee-a25c-4a77-8ab6-8cacc8cbccda",
+      "name": "파일 저장",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('설정 (Config)').first().json.discordWebhookUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formData",
+              "name": "payload_json",
+              "value": "={{ JSON.stringify({ content: '📎 검색 결과 RTF 파일: ' + $json.filename }) }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "files[0]",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "84d18e1b-aaf2-4819-bbd6-985d96e5b933",
+      "name": "디스코드 전송",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        600
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
     }
   ],
   "connections": {
     "채팅 트리거": {
+      "main": [
+        [
+          {
+            "node": "설정 (Config)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "설정 (Config)": {
       "main": [
         [
           {
@@ -173,6 +281,27 @@
         [
           {
             "node": "응답 포맷",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RTF 분기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RTF 분기": {
+      "main": [
+        [
+          {
+            "node": "파일 저장",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "디스코드 전송",
             "type": "main",
             "index": 0
           }
