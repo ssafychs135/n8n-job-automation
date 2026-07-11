@@ -174,50 +174,6 @@
         1320,
         440
       ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('설정 (Config)').first().json.discordWebhookUrl }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "User-Agent",
-              "value": "Mozilla/5.0"
-            }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "multipart-form-data",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "parameterType": "formData",
-              "name": "payload_json",
-              "value": "={{ JSON.stringify({ content: '📎 검색 결과 RTF 파일: ' + $json.filename }) }}"
-            },
-            {
-              "parameterType": "formBinaryData",
-              "name": "files[0]",
-              "inputDataFieldName": "data"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "84d18e1b-aaf2-4819-bbd6-985d96e5b933",
-      "name": "디스코드 전송",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1320,
-        600
-      ],
-      "onError": "continueRegularOutput",
-      "retryOnFail": true,
-      "maxTries": 2,
-      "waitBetweenTries": 2000
     }
   ],
   "connections": {
@@ -297,11 +253,6 @@
         [
           {
             "node": "파일 저장",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "디스코드 전송",
             "type": "main",
             "index": 0
           }
