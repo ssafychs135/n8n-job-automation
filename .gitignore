@@ -7,3 +7,6 @@ data/output/*.md
 !data/output/.gitkeep
 # Postgres 데이터 (DB 파일)
 data/postgres/
+data/output/*.rtf
+data/output/*.docx
+data/rtf2docx.log

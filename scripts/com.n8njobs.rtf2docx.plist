@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.n8njobs.rtf2docx</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>/Users/sunny/n8n-pjt/scripts/rtf2docx.sh</string>
+  </array>
+  <key>WatchPaths</key><array><string>/Users/sunny/n8n-pjt/data/output</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/Users/sunny/n8n-pjt/data/rtf2docx.log</string>
+  <key>StandardErrorPath</key><string>/Users/sunny/n8n-pjt/data/rtf2docx.log</string>
+</dict></plist>
