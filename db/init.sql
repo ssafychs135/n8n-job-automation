@@ -9,6 +9,9 @@
 -- DB 표시 타임존을 KST로 고정 (TIMESTAMPTZ는 UTC 저장, 표시만 변환됨). 재시작에도 유지.
 DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET timezone TO ''Asia/Seoul''', current_database()); END $$;
 
+-- 의미검색용 pgvector 확장 (KURE-v1 임베딩=1024차원). pgvector/pgvector 이미지에 포함됨.
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS jobs (
   id            BIGSERIAL PRIMARY KEY,
   source        TEXT        NOT NULL,          -- 'wanted' | 'jumpit'
@@ -32,6 +35,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   collected_at  TIMESTAMPTZ NOT NULL DEFAULT now(),  -- 수집(pending 적재) 시각
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),  -- 마지막 상태 변경 시각
 
+  embedding     vector(1024),                  -- 의미검색용 KURE-v1 임베딩 (05-embedder가 채움)
+
   -- (source, job_id) 조합이 공고 고유키 → 중복 방지 (수집기 재실행/풀스캔에도 안전)
   UNIQUE (source, job_id)
 );
@@ -41,6 +46,8 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status       ON jobs (status);
 CREATE INDEX IF NOT EXISTS idx_jobs_collected_at ON jobs (collected_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_source       ON jobs (source);
 CREATE INDEX IF NOT EXISTS idx_jobs_notify       ON jobs (status, notified_at);  -- notifier가 미전송 done을 빠르게 집기
+-- 의미검색 최근접(HNSW, 코사인). 수백건이면 정확검색도 충분하나 확장성 위해.
+CREATE INDEX IF NOT EXISTS idx_jobs_embedding     ON jobs USING hnsw (embedding vector_cosine_ops);
 
 -- 참고: 큐/통계 예시 쿼리
 --  · 대기 건수:          SELECT status, count(*) FROM jobs GROUP BY status;

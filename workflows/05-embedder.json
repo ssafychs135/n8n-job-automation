@@ -1,0 +1,273 @@
+{
+  "name": "05 임베더 (Embedder)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "n05-manual",
+      "name": "수동 실행(백필)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 3
+            }
+          ]
+        }
+      },
+      "id": "n05-sched",
+      "name": "스케줄(상시)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "batchSize",
+              "value": 100,
+              "type": "number"
+            },
+            {
+              "id": "a2",
+              "name": "embModel",
+              "value": "text-embedding-kure-v1",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n05-cfg",
+      "name": "설정 (Config)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT id, title, summary, tech_stacks FROM jobs WHERE status='done' AND embedding IS NULL ORDER BY collected_at LIMIT {{ $json.batchSize }}",
+        "options": {}
+      },
+      "id": "n05-sel",
+      "name": "미임베딩 조회",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "NIMisLmbrBSfv9Nt",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 임베딩 입력 텍스트 = 제목 + 요약 + 기술스택. [Each Item]\nconst m = $json;\nconst st = Array.isArray(m.tech_stacks) ? m.tech_stacks.filter(Boolean).join(', ') : '';\nconst input = [m.title, m.summary, st].filter(Boolean).join('\\n');\nreturn { json: { id: m.id, input } };"
+      },
+      "id": "n05-prep",
+      "name": "임베딩 텍스트 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:1234/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('설정 (Config)').first().json.embModel, input: $json.input }) }}",
+        "options": {
+          "timeout": 60000,
+          "batching": {
+            "batch": {
+              "batchSize": 8,
+              "batchInterval": 100
+            }
+          }
+        }
+      },
+      "id": "n05-http",
+      "name": "임베딩 호출 (KURE)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 임베딩 응답 → UPDATE SQL. 실패 시 0행 no-op(다음 실행 재시도). [Each Item]\nconst id = Number($('임베딩 텍스트 준비').item.json.id);\nconst emb = $json.data && $json.data[0] && $json.data[0].embedding;\nlet sql;\nif (Array.isArray(emb) && emb.length === 1024) {\n  const vec = '[' + emb.join(',') + ']';\n  sql = `UPDATE jobs SET embedding='${vec}'::vector, updated_at=now() WHERE id=${id};`;\n} else {\n  sql = `UPDATE jobs SET updated_at=updated_at WHERE id=${id} AND false;`;  // no-op → embedding NULL 유지\n}\nreturn { json: { sql } };"
+      },
+      "id": "n05-upd",
+      "name": "UPDATE 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "n05-exec",
+      "name": "UPDATE 실행",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1340,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "NIMisLmbrBSfv9Nt",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### 임베더 (Embedder)\nstatus=done & embedding IS NULL 공고를 KURE-v1로 임베딩해 jobs.embedding 채움.\n\n- 백필(기존)+상시(새 done)를 한 워크플로우로\n- 수동 실행(백필) 또는 스케줄(상시)\n- 실패 시 NULL 유지 → 다음 실행 재시도\n- batchSize: 한 번에 임베딩할 건수",
+        "height": 220,
+        "width": 340,
+        "color": 4
+      },
+      "id": "n05-note",
+      "name": "메모: 임베더",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        460,
+        20
+      ]
+    }
+  ],
+  "connections": {
+    "수동 실행(백필)": {
+      "main": [
+        [
+          {
+            "node": "설정 (Config)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "스케줄(상시)": {
+      "main": [
+        [
+          {
+            "node": "설정 (Config)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "설정 (Config)": {
+      "main": [
+        [
+          {
+            "node": "미임베딩 조회",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "미임베딩 조회": {
+      "main": [
+        [
+          {
+            "node": "임베딩 텍스트 준비",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "임베딩 텍스트 준비": {
+      "main": [
+        [
+          {
+            "node": "임베딩 호출 (KURE)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "임베딩 호출 (KURE)": {
+      "main": [
+        [
+          {
+            "node": "UPDATE 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "UPDATE 생성": {
+      "main": [
+        [
+          {
+            "node": "UPDATE 실행",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

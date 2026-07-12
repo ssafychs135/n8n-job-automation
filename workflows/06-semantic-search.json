@@ -1,0 +1,255 @@
+{
+  "name": "06 의미검색 (Semantic Search)",
+  "nodes": [
+    {
+      "parameters": {
+        "public": true,
+        "options": {}
+      },
+      "id": "4b2b7253-e033-4c98-b00c-487624b30276",
+      "name": "채팅 트리거",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "embModel",
+              "value": "text-embedding-kure-v1",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "topK",
+              "value": 20,
+              "type": "number"
+            },
+            {
+              "id": "c3",
+              "name": "discordWebhookUrl",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "n06-cfg",
+      "name": "설정 (Config)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:1234/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('설정 (Config)').first().json.embModel, input: $('채팅 트리거').first().json.chatInput }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "n06-http",
+      "name": "질문 임베딩 (KURE)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 질문 임베딩 → 벡터 최근접 검색 SQL 생성. 임베딩 실패 시 안내.\nconst emb = $json.data && $json.data[0] && $json.data[0].embedding;\nconst topK = Number($('설정 (Config)').first().json.topK) || 20;\nif (!Array.isArray(emb) || emb.length !== 1024) {\n  return [{ json: { sql: `SELECT '임베딩 서버에 연결하지 못했어요. LM Studio가 켜져 있는지 확인해 주세요.' AS 안내` } }];\n}\nconst vec = '[' + emb.join(',') + ']';\nconst sql = `SELECT company, title, url, min_career, max_career, tech_stacks, summary, round((1-(embedding <=> '${vec}'::vector))::numeric,3) AS score FROM jobs WHERE status='done' AND embedding IS NOT NULL ORDER BY embedding <=> '${vec}'::vector LIMIT ${topK}`;\nreturn [{ json: { sql } }];"
+      },
+      "id": "n06-qprep",
+      "name": "쿼리 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "973b25ce-2d93-40a3-8d4d-c72814d18939",
+      "name": "검색 (읽기전용)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        880,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FwDuNNPnm7VCKyXU",
+          "name": "Postgres (readonly)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 결과 포맷 + 마크다운 이스케이프 + Setext 방지 + 파일요청 안내\nconst rows = $input.all();\nconst md = (s) => String(s == null ? '' : s).replace(/[\\\\`*_~#|>\\[\\]]/g, '\\\\$&').replace(/\\r?\\n/g, ' ').trim();\nconst val = (v) => Array.isArray(v) ? v.map(md).join(', ') : (v === '' || v == null ? '(미분류)' : md(v));\nlet text;\nif (rows.length === 0) { text = '🔎 결과가 없어요.'; }\nelse {\n  const first = rows[0].json; const keys = Object.keys(first);\n  if ('sql' in first || 'error' in first) text = '⚠️ 쿼리를 실행하지 못했어요. 질문을 조금 다르게 표현해 주세요.';\n  else if (keys.length === 1 && keys[0] === '안내') text = '⚠️ ' + md(first['안내']);\n  else if ('title' in first) {\n    text = `🔎 **${rows.length}건**\\n\\n`;\n    for (const r of rows) {\n      const m = r.json;\n      const career = [m.min_career, m.max_career].filter(v => v != null).join('~') || '무관';\n      const st = Array.isArray(m.tech_stacks) ? m.tech_stacks.filter(Boolean).map(md).join(', ') : '';\n      text += `**${md(m.company)} — ${md(m.title)}**  ·  경력 ${career}${m.score!=null?`  ·  관련도 ${Math.round(m.score*100)}%`:''}\\n`;\n      if (st) text += `${st}\\n`;\n      if (m.url) text += `${m.url}\\n`;\n      text += '\\n';\n    }\n  } else if (keys.length === 1) text = `🔎 결과: **${val(first[keys[0]])}**`;\n  else {\n    const numKey = keys.find(k => rows.every(r => typeof r.json[k] === 'number' || /^-?\\d+(\\.\\d+)?$/.test(String(r.json[k]))));\n    const labelKey = keys.find(k => k !== numKey);\n    if (keys.length === 2 && numKey && labelKey) { text = `📊 **${rows.length}개**\\n\\n`; rows.forEach((r,i)=>{ text += `${i+1}. **${val(r.json[labelKey])}** — ${r.json[numKey]}\\n`; }); }\n    else { text = `🔎 **${rows.length}행**\\n\\n| ${keys.map(md).join(' | ')} |\\n| ${keys.map(()=>'---').join(' | ')} |\\n`; for (const r of rows) text += '| ' + keys.map(k=>val(r.json[k])).join(' | ') + ' |\\n'; }\n  }\n}\n// 파일 요청이면 안내 추가\nif (!text.startsWith('⚠️') && !text.startsWith('🔎 결과가 없어요')) text += '\\n📎 이 결과를 RTF/DOCX 파일로 저장하고 디스코드로 보냈어요.';\nreturn [{ json: { output: text, text } }];"
+      },
+      "id": "196474e5-f012-474a-a6a2-87072f27f61c",
+      "name": "응답 포맷",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 질문에 파일/문서/rtf 요청이 있을 때만 RTF 파일 생성. 아니면 [] (파일 안 만듦).\nconst q = ($('채팅 트리거').first().json.chatInput) || '검색';\nconst rows = $input.all();\nif (rows.length === 0) return [];\nconst f0 = rows[0].json;\nif ('안내' in f0 || 'sql' in f0 || 'error' in f0) return [];  // 검증차단/실패는 파일 안 만듦\n\n// RTF 이스케이프: \\ { } 및 비ASCII(한글 등) 유니코드 이스케이프(\\uNNNN?)\nconst esc = (s) => {\n  let out = '';\n  for (const ch of String(s == null ? '' : s)) {\n    const code = ch.codePointAt(0);\n    if (ch === '\\\\') out += '\\\\\\\\';\n    else if (ch === '{') out += '\\\\{';\n    else if (ch === '}') out += '\\\\}';\n    else if (code > 127) { const c = code > 32767 ? code - 65536 : code; out += '\\\\u' + c + '?'; }\n    else out += ch;\n  }\n  return out;\n};\n\nlet bodyRtf = '';\nconst isJobs = 'title' in rows[0].json;\nif (isJobs) {\n  bodyRtf += '{\\\\fs36\\\\b ' + esc('채용 공고 검색 결과 (' + rows.length + '건)') + '}\\\\par\\\\par ';\n  for (const r of rows) {\n    const m = r.json;\n    const career = [m.min_career, m.max_career].filter(v => v != null).join('~') || '무관';\n    const st = Array.isArray(m.tech_stacks) ? m.tech_stacks.filter(Boolean).join(', ') : '';\n    bodyRtf += '{\\\\b ' + esc((m.company||'') + ' — ' + (m.title||'')) + '}  (' + esc('경력 ' + career) + ')\\\\par ';\n    if (st) bodyRtf += esc(st) + '\\\\par ';\n    if (m.url) bodyRtf += esc(m.url) + '\\\\par ';\n    bodyRtf += '\\\\par ';\n  }\n} else {\n  const keys = Object.keys(rows[0].json);\n  bodyRtf += '{\\\\fs36\\\\b ' + esc('검색 결과 (' + rows.length + '행)') + '}\\\\par\\\\par ';\n  bodyRtf += '{\\\\b ' + esc(keys.join(' | ')) + '}\\\\par ';\n  for (const r of rows) bodyRtf += esc(keys.map(k => Array.isArray(r.json[k]) ? r.json[k].join(', ') : r.json[k]).join(' | ')) + '\\\\par ';\n}\nconst rtf = '{\\\\rtf1\\\\ansi\\\\ansicpg949\\\\deff0{\\\\fonttbl{\\\\f0\\\\fnil Malgun Gothic;}}\\\\f0\\\\fs24 ' + bodyRtf + '}';\n\n// 파일명: 정제 키워드_건수_시각(KST). 원본 질문에서 요청어/조사 제거해 핵심어만 남김.\nconst FILLER = /(관련된|관련|직무를|직무|직군|포지션|공고를|공고|채용|일자리|자리|찾아주세요|찾아줘|찾아|찾고|찾는|보여주세요|보여줘|알려주세요|알려줘|검색해줘|검색|해주세요|해줘|주세요|싶어요|싶어|싶은|좀|목록|리스트|전체|전부|모두|문서로|문서|파일로|파일|rtf로|rtf|docx로|docx|만들어줘|만들어|줄래|해줄래|주라|줘)/g;\nconst JOSA = /(으로|로|를|을|은|는|이|가|의|에서|에게|한테|와|과|도|만|랑|이랑|에)$/;\nlet kw = q.replace(/[\\\\/:*?\"<>|\\n\\r]+/g, ' ').replace(FILLER, ' ').replace(/\\s+/g, ' ').trim();\nkw = kw.split(' ').map(t => t.replace(JOSA, '')).filter(Boolean).join('_').replace(/[^\\w가-힣_]/g, '').replace(/_+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24);\nif (!kw) kw = '검색결과';\nconst d = new Date();\nconst pad = (x) => String(x).padStart(2, '0');\nconst ts = `${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;\nconst filename = `${kw}_${rows.length}건_${ts}.rtf`;\nconst binary = await this.helpers.prepareBinaryData(Buffer.from(rtf, 'utf-8'), filename, 'application/rtf');\nreturn [{ json: { filename }, binary: { data: binary } }];"
+      },
+      "id": "db0fbf6a-4b0f-4d35-8da3-ad99cb7afff6",
+      "name": "RTF 분기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/data/output/{{ $json.filename }}",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "ea129dee-a25c-4a77-8ab6-8cacc8cbccda",
+      "name": "파일 저장",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 06 의미검색 (Semantic Search)\n질문을 KURE-v1로 임베딩 → 벡터 최근접(코사인) 검색 → 관련도순 응답.\n키워드가 안 겹쳐도 의미로 매칭(예: '프롬프트 엔지니어링' → LLM/RAG 공고).\n\n- topK: 반환 개수\n- 결과는 RTF/DOCX로도 저장·전송(기존 파이프라인 재사용)\n- 04(text-to-SQL)와 나란히 두고 품질 비교",
+        "height": 220,
+        "width": 360,
+        "color": 6
+      },
+      "id": "n06-note",
+      "name": "메모: 의미검색",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        220,
+        40
+      ]
+    }
+  ],
+  "connections": {
+    "채팅 트리거": {
+      "main": [
+        [
+          {
+            "node": "설정 (Config)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "설정 (Config)": {
+      "main": [
+        [
+          {
+            "node": "질문 임베딩 (KURE)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "질문 임베딩 (KURE)": {
+      "main": [
+        [
+          {
+            "node": "쿼리 준비",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "쿼리 준비": {
+      "main": [
+        [
+          {
+            "node": "검색 (읽기전용)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "검색 (읽기전용)": {
+      "main": [
+        [
+          {
+            "node": "응답 포맷",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RTF 분기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RTF 분기": {
+      "main": [
+        [
+          {
+            "node": "파일 저장",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

@@ -46,7 +46,8 @@ services:
   # 수집 공고 저장·중복관리·통계용 PostgreSQL.
   # n8n은 같은 Docker 네트워크에서 host "postgres", port 5432 로 접속한다.
   postgres:
-    image: postgres:16-alpine
+    # pgvector 확장 포함 이미지(의미검색용). PG16이라 기존 data/postgres 그대로 호환.
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
