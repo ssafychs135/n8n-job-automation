@@ -1,5 +1,5 @@
 {
-  "name": "04 자연어 검색 (raw Text-to-SQL)",
+  "name": "04 하이브리드 검색 (Self-Query)",
   "nodes": [
     {
       "parameters": {
@@ -17,14 +17,56 @@
     },
     {
       "parameters": {
-        "jsCode": "// 사용자 질문 → gemma raw-SQL 요청 본문 (json_schema로 {sql}만 받음)\nconst q = $json.chatInput || $json.chatMessage || \"\";\nconst body = { model:\"google/gemma-4-e4b\",\n  messages:[{role:\"system\",content:\"너는 PostgreSQL 전문가다. jobs 테이블에 대해 사용자 질문을 하나의 SELECT 쿼리로 변환한다.\\\\n테이블 jobs 컬럼: source(text jumpit|wanted), company(text), title(text), url(text), min_career(int 최소요구연차), max_career(int), tech_stacks(text[] 기술스택배열), locations(text), summary(text 요약/직무내용), status(text done|pending), collected_at(timestamptz), notified_at(timestamptz)\\\\n규칙:\\\\n- SELECT 문만 생성(INSERT/UPDATE/DELETE/DROP 등 절대 금지).\\\\n- 기본적으로 status='done' 조건 포함.\\\\n- LIMIT은 사용자가 개수를 지정하거나 순위(TOP N)를 물을 때만. 그 외엔 LIMIT 없이 전체 반환.\\\\n- 직무/키워드/업무내용 검색은 제목과 요약을 모두 본다: (title ILIKE '%키워드%' OR summary ILIKE '%키워드%'). 제목만이 아니라 요약(직무 내용)까지 봐야 관련 직무를 놓치지 않는다.\\\\n- 특정 기술: EXISTS (SELECT 1 FROM unnest(tech_stacks) s WHERE s ILIKE '%기술%').\\\\n- 기술 빈도/순위: SELECT unnest(tech_stacks) AS tech, count(*) ... GROUP BY tech ORDER BY count DESC.\\\\n- \\\\\\\"N년 이하\\\\\\\": (min_career IS NULL OR min_career<=N). \\\\\\\"신입\\\\\\\": min_career=0.\\\\n- 오직 SQL만 출력.\"},{role:\"user\",content:q}],\n  temperature:0.1, max_tokens:1500,\n  response_format:{type:\"json_schema\", json_schema:{name:\"q\", schema:{type:\"object\", additionalProperties:false, properties:{sql:{type:\"string\"}}, required:[\"sql\"]}}} };\nreturn [{ json: { body } }];"
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "sqlModel",
+              "value": "google/gemma-4-e4b",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "embModel",
+              "value": "text-embedding-kure-v1",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "topK",
+              "value": 20,
+              "type": "number"
+            },
+            {
+              "id": "c4",
+              "name": "discordWebhookUrl",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
       },
-      "id": "366f3aeb-ce92-432c-971a-2f8962c70623",
-      "name": "LLM 요청 준비",
+      "id": "n04-cfg",
+      "name": "설정 (Config)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 사용자 질문 → gemma 분해 요청. mode(search/aggregate) + 구조필터 + semantic_query.\nconst q = $json.chatInput || $json.chatMessage || \"\";\nconst sys = `너는 채용공고 검색 도우미다. status='done'인 공고들이 담긴 jobs 테이블에서 사용자 질문을 처리한다.\n\n[모드]\n- search: 특정 직무·기술·역할을 찾는 일반 검색(대부분 여기). 의미검색+구조필터로 처리.\n- aggregate: 통계/집계/순위 질문일 때만(예: 기술스택 TOP10, 회사별 공고수, 지역 분포). 이때만 sql에 SELECT 집계문.\n\n[필드]\n- mode: \"search\" 또는 \"aggregate\"\n- semantic_query: search일 때 찾는 직무·기술·역할을 자연어로 정제(예 \"온디바이스 AI 모델 경량화·최적화\"). aggregate면 \"\".\n- career_lte: 공고 요구경력(min_career)이 이 값 이하인 것만. \"N년차/N년 이하/주니어\"면 N, \"신입\"이면 0. 무관이면 -1.\n- career_gte: 공고 요구경력이 이 값 이상(시니어). \"N년 이상\"이면 N. 무관이면 -1.\n- location: 지역 키워드(예 \"서울\",\"판교\"). 무관이면 \"\".\n- tech: 반드시 포함할 핵심 기술 배열(예 [\"Python\"]). 명시 안 하면 [].\n- sql: aggregate일 때만 SELECT 집계문. 기술스택 빈도/순위는 반드시 \"SELECT s AS tech, count(*) FROM jobs, unnest(tech_stacks) s WHERE status='done' GROUP BY s ORDER BY count(*) DESC LIMIT N\" 형태(배열 통째로 GROUP BY 금지). 회사/지역 집계는 GROUP BY company/locations. SELECT만, 세미콜론·여러문장 금지. search면 \"\".\n\n[규칙] 애매하면 search. semantic_query엔 지역·경력 조건 넣지 말고 직무·기술 의미만 담아라.`;\nconst schema = { type:\"object\", additionalProperties:false, properties:{\n  mode:{type:\"string\", enum:[\"search\",\"aggregate\"]},\n  semantic_query:{type:\"string\"}, career_lte:{type:\"integer\"}, career_gte:{type:\"integer\"},\n  location:{type:\"string\"}, tech:{type:\"array\", items:{type:\"string\"}}, sql:{type:\"string\"} },\n  required:[\"mode\",\"semantic_query\",\"career_lte\",\"career_gte\",\"location\",\"tech\",\"sql\"] };\nconst body = { model: $('설정 (Config)').first().json.sqlModel,\n  messages:[{role:\"system\",content:sys},{role:\"user\",content:q}],\n  temperature:0.1, max_tokens:1500,\n  response_format:{type:\"json_schema\", json_schema:{name:\"decomp\", schema}} };\nreturn [{ json: { body } }];"
+      },
+      "id": "n04-req",
+      "name": "요청 준비",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        220,
+        440,
         300
       ]
     },
@@ -48,26 +90,69 @@
           "timeout": 60000
         }
       },
-      "id": "e92cbec5-62b4-407e-b07d-4d742a5f04a7",
-      "name": "SQL 생성 (gemma)",
+      "id": "n04-gemma",
+      "name": "분해 (gemma)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        440,
+        660,
         300
       ],
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "// [2차 방어] gemma가 생성한 SQL 검증. 위반 시 안내 메시지를 반환하는 SELECT로 대체.\nlet sql = '';\ntry { sql = JSON.parse($json.choices?.[0]?.message?.content || '{}').sql || ''; } catch (e) {}\nsql = String(sql).trim().replace(/;+\\s*$/, '');   // 끝 세미콜론 제거\n\nconst guide = (msg) => [{ json: { sql: `SELECT '${msg.replace(/'/g, \"''\")}' AS 안내` } }];\n\nif (!/^\\s*SELECT\\b/i.test(sql)) return guide('SELECT 쿼리만 실행할 수 있어요.');\nif (/\\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|REVOKE|TRUNCATE|COPY|MERGE)\\b/i.test(sql))\n  return guide('허용되지 않는 명령이 포함돼 실행하지 않았어요.');\nif (/;/.test(sql)) return guide('한 번에 하나의 쿼리만 실행할 수 있어요.');\n// LIMIT 강제(없으면 30, 있으면 50 이하로 캡)\n// LIMIT 강제 안 함(전체 반환). gemma가 넣은 경우만 과도한 값 500으로 캡(폭주 방지)\nif (/\\bLIMIT\\s+\\d+/i.test(sql)) sql = sql.replace(/\\bLIMIT\\s+(\\d+)/i, (m, n) => 'LIMIT ' + Math.min(Number(n), 500));\n\nreturn [{ json: { sql } }];"
+        "jsCode": "// gemma 분해 JSON 파싱 + 방어. 실패 시 search 폴백(질문 전체를 의미검색).\nlet P; try { P = JSON.parse($json.choices?.[0]?.message?.content || '{}'); } catch(e){ P = {}; }\nconst chatInput = $('채팅 트리거').first().json.chatInput || '';\nconst out = {\n  mode: P.mode === 'aggregate' ? 'aggregate' : 'search',\n  semantic_query: (P.semantic_query && String(P.semantic_query).trim()) ? String(P.semantic_query).trim() : chatInput,\n  career_lte: Number.isInteger(P.career_lte) ? P.career_lte : -1,\n  career_gte: Number.isInteger(P.career_gte) ? P.career_gte : -1,\n  location: typeof P.location === 'string' ? P.location : '',\n  tech: Array.isArray(P.tech) ? P.tech : [],\n  sql: typeof P.sql === 'string' ? P.sql : ''\n};\nout.emb_input = out.semantic_query || chatInput || ' ';\nreturn [{ json: out }];"
       },
-      "id": "5f1dc764-eb21-4b63-9fa8-bfeabd22ac6c",
-      "name": "SQL 검증",
+      "id": "n04-parse",
+      "name": "분해 파싱",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        660,
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:1234/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('설정 (Config)').first().json.embModel, input: $json.emb_input }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "n04-emb",
+      "name": "질문 임베딩 (KURE)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// mode에 따라 최종 SQL 생성. aggregate=검증된 raw SELECT, search=하드필터+벡터랭킹.\nconst P = $('분해 파싱').first().json;\nconst emb = $json.data && $json.data[0] && $json.data[0].embedding;\nconst topK = Number($('설정 (Config)').first().json.topK) || 20;\nconst guide = (msg)=>[{json:{sql:`SELECT '${String(msg).replace(/'/g,\"''\")}' AS 안내`}}];\n\nif (P.mode === 'aggregate' && P.sql && String(P.sql).trim()) {\n  let sql = String(P.sql).trim().replace(/;+\\s*$/,'');\n  if (!/^\\s*SELECT\\b/i.test(sql)) return guide('집계 쿼리를 이해하지 못했어요.');\n  if (/\\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|REVOKE|TRUNCATE|COPY|MERGE)\\b/i.test(sql)) return guide('허용되지 않는 명령이 포함돼 실행하지 않았어요.');\n  if (/;/.test(sql)) return guide('한 번에 하나의 쿼리만 실행할 수 있어요.');\n  if (/\\bLIMIT\\s+\\d+/i.test(sql)) sql = sql.replace(/\\bLIMIT\\s+(\\d+)/i,(m,n)=>'LIMIT '+Math.min(Number(n),500));\n  return [{json:{sql}}];\n}\n// search 모드: 하드필터(경력·지역·기술) + 벡터 랭킹\nif (!Array.isArray(emb) || emb.length !== 1024) return guide('임베딩 서버에 연결하지 못했어요. LM Studio가 켜져 있는지 확인해 주세요.');\nconst vec = '[' + emb.join(',') + ']';\nconst esc = s => String(s).replace(/'/g,\"''\");\nconst conds = [\"status='done'\",\"embedding IS NOT NULL\"];\nconst cl = Number(P.career_lte), cg = Number(P.career_gte);\nif (Number.isFinite(cl) && cl>=0) conds.push(`(min_career IS NULL OR min_career <= ${cl})`);\nif (Number.isFinite(cg) && cg>=0) conds.push(`min_career >= ${cg}`);\nif (P.location && String(P.location).trim()) conds.push(`locations ILIKE '%${esc(String(P.location).trim())}%'`);\nfor (const t of (Array.isArray(P.tech)?P.tech:[])) { const e = esc(String(t).trim()); if (e) conds.push(`(EXISTS(SELECT 1 FROM unnest(tech_stacks) s WHERE s ILIKE '%${e}%') OR title ILIKE '%${e}%' OR summary ILIKE '%${e}%')`); }\nconst where = conds.join(' AND ');\nconst sql = `SELECT company, title, url, min_career, max_career, tech_stacks, summary, round((1-(embedding <=> '${vec}'::vector))::numeric,3) AS score FROM jobs WHERE ${where} ORDER BY embedding <=> '${vec}'::vector LIMIT ${topK}`;\nreturn [{json:{sql}}];"
+      },
+      "id": "n04-build",
+      "name": "최종 SQL 빌드",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
         300
       ]
     },
@@ -82,12 +167,12 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        880,
+        1540,
         300
       ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_IMPORT",
+          "id": "FwDuNNPnm7VCKyXU",
           "name": "Postgres (readonly)"
         }
       },
@@ -95,54 +180,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// 결과 포맷 + 마크다운 이스케이프 + Setext 방지 + 파일요청 안내\nconst rows = $input.all();\nconst md = (s) => String(s == null ? '' : s).replace(/[\\\\`*_~#|>\\[\\]]/g, '\\\\$&').replace(/\\r?\\n/g, ' ').trim();\nconst val = (v) => Array.isArray(v) ? v.map(md).join(', ') : (v === '' || v == null ? '(미분류)' : md(v));\nlet text;\nif (rows.length === 0) { text = '🔎 결과가 없어요.'; }\nelse {\n  const first = rows[0].json; const keys = Object.keys(first);\n  if ('sql' in first || 'error' in first) text = '⚠️ 쿼리를 실행하지 못했어요. 질문을 조금 다르게 표현해 주세요.';\n  else if (keys.length === 1 && keys[0] === '안내') text = '⚠️ ' + md(first['안내']);\n  else if ('title' in first) {\n    text = `🔎 **${rows.length}건**\\n\\n`;\n    for (const r of rows) {\n      const m = r.json;\n      const career = [m.min_career, m.max_career].filter(v => v != null).join('~') || '무관';\n      const st = Array.isArray(m.tech_stacks) ? m.tech_stacks.filter(Boolean).map(md).join(', ') : '';\n      text += `**${md(m.company)} — ${md(m.title)}**  ·  경력 ${career}\\n`;\n      if (st) text += `${st}\\n`;\n      if (m.url) text += `${m.url}\\n`;\n      text += '\\n';\n    }\n  } else if (keys.length === 1) text = `🔎 결과: **${val(first[keys[0]])}**`;\n  else {\n    const numKey = keys.find(k => rows.every(r => typeof r.json[k] === 'number' || /^-?\\d+(\\.\\d+)?$/.test(String(r.json[k]))));\n    const labelKey = keys.find(k => k !== numKey);\n    if (keys.length === 2 && numKey && labelKey) { text = `📊 **${rows.length}개**\\n\\n`; rows.forEach((r,i)=>{ text += `${i+1}. **${val(r.json[labelKey])}** — ${r.json[numKey]}\\n`; }); }\n    else { text = `🔎 **${rows.length}행**\\n\\n| ${keys.map(md).join(' | ')} |\\n| ${keys.map(()=>'---').join(' | ')} |\\n`; for (const r of rows) text += '| ' + keys.map(k=>val(r.json[k])).join(' | ') + ' |\\n'; }\n  }\n}\n// 파일 요청이면 안내 추가\nif (!text.startsWith('⚠️') && !text.startsWith('🔎 결과가 없어요')) text += '\\n📎 이 결과를 RTF/DOCX 파일로 저장하고 디스코드로 보냈어요.';\nreturn [{ json: { output: text, text } }];"
+        "jsCode": "// 결과 포맷 + 마크다운 이스케이프 + Setext 방지 + 파일요청 안내\nconst rows = $input.all();\nconst md = (s) => String(s == null ? '' : s).replace(/[\\\\`*_~#|>\\[\\]]/g, '\\\\$&').replace(/\\r?\\n/g, ' ').trim();\nconst val = (v) => Array.isArray(v) ? v.map(md).join(', ') : (v === '' || v == null ? '(미분류)' : md(v));\nlet text;\nif (rows.length === 0) { text = '🔎 결과가 없어요.'; }\nelse {\n  const first = rows[0].json; const keys = Object.keys(first);\n  if ('sql' in first || 'error' in first) text = '⚠️ 쿼리를 실행하지 못했어요. 질문을 조금 다르게 표현해 주세요.';\n  else if (keys.length === 1 && keys[0] === '안내') text = '⚠️ ' + md(first['안내']);\n  else if ('title' in first) {\n    text = `🔎 **${rows.length}건**\\n\\n`;\n    for (const r of rows) {\n      const m = r.json;\n      const career = [m.min_career, m.max_career].filter(v => v != null).join('~') || '무관';\n      const st = Array.isArray(m.tech_stacks) ? m.tech_stacks.filter(Boolean).map(md).join(', ') : '';\n      text += `**${md(m.company)} — ${md(m.title)}**  ·  경력 ${career}${m.score!=null?`  ·  관련도 ${Math.round(m.score*100)}%`:''}\\n`;\n      if (st) text += `${st}\\n`;\n      if (m.url) text += `${m.url}\\n`;\n      text += '\\n';\n    }\n  } else if (keys.length === 1) text = `🔎 결과: **${val(first[keys[0]])}**`;\n  else {\n    const numKey = keys.find(k => rows.every(r => typeof r.json[k] === 'number' || /^-?\\d+(\\.\\d+)?$/.test(String(r.json[k]))));\n    const labelKey = keys.find(k => k !== numKey);\n    if (keys.length === 2 && numKey && labelKey) { text = `📊 **${rows.length}개**\\n\\n`; rows.forEach((r,i)=>{ text += `${i+1}. **${val(r.json[labelKey])}** — ${r.json[numKey]}\\n`; }); }\n    else { text = `🔎 **${rows.length}행**\\n\\n| ${keys.map(md).join(' | ')} |\\n| ${keys.map(()=>'---').join(' | ')} |\\n`; for (const r of rows) text += '| ' + keys.map(k=>val(r.json[k])).join(' | ') + ' |\\n'; }\n  }\n}\n// 파일 요청이면 안내 추가\nif (!text.startsWith('⚠️') && !text.startsWith('🔎 결과가 없어요')) text += '\\n📎 이 결과를 RTF/DOCX 파일로 저장하고 디스코드로 보냈어요.';\nreturn [{ json: { output: text, text } }];"
       },
       "id": "196474e5-f012-474a-a6a2-87072f27f61c",
       "name": "응답 포맷",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1100,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "content": "### 자연어 검색 (raw Text-to-SQL)\ngemma가 질문→SELECT → 검증 → 읽기전용 롤 실행 → 응답.\n집계 질문도 가능(TOP N, 회사별 등).\n\n**파일 export**: 질문에 '파일/문서/rtf/저장' 있으면\n→ RTF 생성 → data/output 저장 + 디스코드 전송.\n(Config의 discordWebhookUrl 입력 필요)",
-        "height": 220,
-        "width": 360,
-        "color": 7
-      },
-      "id": "7e6f9c64-874b-4a82-ae2d-bd12d3c46388",
-      "name": "메모: 검색",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [
-        220,
-        40
-      ]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "ed4c9b77-ec70-430c-8673-8de2e0fdc26f",
-              "name": "discordWebhookUrl",
-              "value": "",
-              "type": "string"
-            }
-          ]
-        },
-        "includeOtherFields": true,
-        "options": {}
-      },
-      "id": "b94ec9d5-5ac8-4a73-95ea-f57d285d0ae2",
-      "name": "설정 (Config)",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        180,
+        1760,
         300
       ]
     },
@@ -155,7 +200,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1100,
+        1760,
         520
       ]
     },
@@ -171,8 +216,24 @@
       "type": "n8n-nodes-base.readWriteFile",
       "typeVersion": 1,
       "position": [
-        1320,
+        1980,
         440
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 04 하이브리드 검색 (Self-Query)\ngemma가 질문을 {mode + 필터 + 의미어}로 분해:\n- **search**: 경력·지역·기술=하드필터(WHERE) + KURE 임베딩 벡터랭킹(ORDER BY)\n- **aggregate**: 통계/순위는 검증된 SELECT 집계\n\n키워드가 안 겹쳐도 의미로 찾고, 경력/지역은 반드시 만족. 결과는 RTF/DOCX로도 전송.",
+        "height": 240,
+        "width": 380,
+        "color": 7
+      },
+      "id": "n04-note",
+      "name": "메모: 검색",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        440,
+        20
       ]
     }
   ],
@@ -192,36 +253,58 @@
       "main": [
         [
           {
-            "node": "LLM 요청 준비",
+            "node": "요청 준비",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "LLM 요청 준비": {
+    "요청 준비": {
       "main": [
         [
           {
-            "node": "SQL 생성 (gemma)",
+            "node": "분해 (gemma)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "SQL 생성 (gemma)": {
+    "분해 (gemma)": {
       "main": [
         [
           {
-            "node": "SQL 검증",
+            "node": "분해 파싱",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "SQL 검증": {
+    "분해 파싱": {
+      "main": [
+        [
+          {
+            "node": "질문 임베딩 (KURE)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "질문 임베딩 (KURE)": {
+      "main": [
+        [
+          {
+            "node": "최종 SQL 빌드",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "최종 SQL 빌드": {
       "main": [
         [
           {
