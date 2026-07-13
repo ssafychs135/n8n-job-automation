@@ -33,8 +33,8 @@
             },
             {
               "id": "c3",
-              "name": "topK",
-              "value": 20,
+              "name": "minScore",
+              "value": 0.5,
               "type": "number"
             },
             {
@@ -145,7 +145,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// mode에 따라 최종 SQL 생성. aggregate=검증된 raw SELECT, search=하드필터+벡터랭킹.\nconst P = $('분해 파싱').first().json;\nconst emb = $json.data && $json.data[0] && $json.data[0].embedding;\nconst topK = Number($('설정 (Config)').first().json.topK) || 20;\nconst guide = (msg)=>[{json:{sql:`SELECT '${String(msg).replace(/'/g,\"''\")}' AS 안내`}}];\n\nif (P.mode === 'aggregate' && P.sql && String(P.sql).trim()) {\n  let sql = String(P.sql).trim().replace(/;+\\s*$/,'');\n  if (!/^\\s*SELECT\\b/i.test(sql)) return guide('집계 쿼리를 이해하지 못했어요.');\n  if (/\\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|REVOKE|TRUNCATE|COPY|MERGE)\\b/i.test(sql)) return guide('허용되지 않는 명령이 포함돼 실행하지 않았어요.');\n  if (/;/.test(sql)) return guide('한 번에 하나의 쿼리만 실행할 수 있어요.');\n  if (/\\bLIMIT\\s+\\d+/i.test(sql)) sql = sql.replace(/\\bLIMIT\\s+(\\d+)/i,(m,n)=>'LIMIT '+Math.min(Number(n),500));\n  return [{json:{sql}}];\n}\n// search 모드: 하드필터(경력·지역·기술) + 벡터 랭킹\nif (!Array.isArray(emb) || emb.length !== 1024) return guide('임베딩 서버에 연결하지 못했어요. LM Studio가 켜져 있는지 확인해 주세요.');\nconst vec = '[' + emb.join(',') + ']';\nconst esc = s => String(s).replace(/'/g,\"''\");\nconst conds = [\"status='done'\",\"embedding IS NOT NULL\"];\nconst cl = Number(P.career_lte), cg = Number(P.career_gte);\nif (Number.isFinite(cl) && cl>=0) conds.push(`(min_career IS NULL OR min_career <= ${cl})`);\nif (Number.isFinite(cg) && cg>=0) conds.push(`min_career >= ${cg}`);\nif (P.location && String(P.location).trim()) conds.push(`locations ILIKE '%${esc(String(P.location).trim())}%'`);\nfor (const t of (Array.isArray(P.tech)?P.tech:[])) { const e = esc(String(t).trim()); if (e) conds.push(`(EXISTS(SELECT 1 FROM unnest(tech_stacks) s WHERE s ILIKE '%${e}%') OR title ILIKE '%${e}%' OR summary ILIKE '%${e}%')`); }\nconst where = conds.join(' AND ');\nconst sql = `SELECT company, title, url, min_career, max_career, tech_stacks, summary, round((1-(embedding <=> '${vec}'::vector))::numeric,3) AS score FROM jobs WHERE ${where} ORDER BY embedding <=> '${vec}'::vector LIMIT ${topK}`;\nreturn [{json:{sql}}];"
+        "jsCode": "// mode에 따라 최종 SQL 생성. aggregate=검증된 raw SELECT, search=하드필터+벡터랭킹.\nconst P = $('분해 파싱').first().json;\nconst emb = $json.data && $json.data[0] && $json.data[0].embedding;\nconst msRaw = Number($('설정 (Config)').first().json.minScore);\nlet ms = Number.isFinite(msRaw) ? msRaw : 0.5;\nif (ms > 1) ms /= 100;          // 50 → 0.5 도 허용\nif (ms < 0) ms = 0; if (ms > 1) ms = 1;\nconst maxDist = 1 - ms;         // 관련도 >= ms  ⇔  거리 <= 1-ms\nconst guide = (msg)=>[{json:{sql:`SELECT '${String(msg).replace(/'/g,\"''\")}' AS 안내`}}];\n\nif (P.mode === 'aggregate' && P.sql && String(P.sql).trim()) {\n  let sql = String(P.sql).trim().replace(/;+\\s*$/,'');\n  if (!/^\\s*SELECT\\b/i.test(sql)) return guide('집계 쿼리를 이해하지 못했어요.');\n  if (/\\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|REVOKE|TRUNCATE|COPY|MERGE)\\b/i.test(sql)) return guide('허용되지 않는 명령이 포함돼 실행하지 않았어요.');\n  if (/;/.test(sql)) return guide('한 번에 하나의 쿼리만 실행할 수 있어요.');\n  if (/\\bLIMIT\\s+\\d+/i.test(sql)) sql = sql.replace(/\\bLIMIT\\s+(\\d+)/i,(m,n)=>'LIMIT '+Math.min(Number(n),500));\n  return [{json:{sql}}];\n}\n// search 모드: 하드필터(경력·지역·기술) + 벡터 랭킹\nif (!Array.isArray(emb) || emb.length !== 1024) return guide('임베딩 서버에 연결하지 못했어요. LM Studio가 켜져 있는지 확인해 주세요.');\nconst vec = '[' + emb.join(',') + ']';\nconst esc = s => String(s).replace(/'/g,\"''\");\nconst conds = [\"status='done'\",\"embedding IS NOT NULL\"];\nconst cl = Number(P.career_lte), cg = Number(P.career_gte);\nif (Number.isFinite(cl) && cl>=0) conds.push(`(min_career IS NULL OR min_career <= ${cl})`);\nif (Number.isFinite(cg) && cg>=0) conds.push(`min_career >= ${cg}`);\nif (P.location && String(P.location).trim()) conds.push(`locations ILIKE '%${esc(String(P.location).trim())}%'`);\nfor (const t of (Array.isArray(P.tech)?P.tech:[])) { const e = esc(String(t).trim()); if (e) conds.push(`(EXISTS(SELECT 1 FROM unnest(tech_stacks) s WHERE s ILIKE '%${e}%') OR title ILIKE '%${e}%' OR summary ILIKE '%${e}%')`); }\nconds.push(`(embedding <=> '${vec}'::vector) <= ${maxDist}`);  // 관련도 하드캡\nconst where = conds.join(' AND ');\nconst sql = `SELECT company, title, url, min_career, max_career, tech_stacks, summary, round((1-(embedding <=> '${vec}'::vector))::numeric,3) AS score FROM jobs WHERE ${where} ORDER BY embedding <=> '${vec}'::vector`;\nreturn [{json:{sql}}];"
       },
       "id": "n04-build",
       "name": "최종 SQL 빌드",
@@ -222,7 +222,7 @@
     },
     {
       "parameters": {
-        "content": "### 04 하이브리드 검색 (Self-Query)\ngemma가 질문을 {mode + 필터 + 의미어}로 분해:\n- **search**: 경력·지역·기술=하드필터(WHERE) + KURE 임베딩 벡터랭킹(ORDER BY)\n- **aggregate**: 통계/순위는 검증된 SELECT 집계\n\n키워드가 안 겹쳐도 의미로 찾고, 경력/지역은 반드시 만족. 결과는 RTF/DOCX로도 전송.",
+        "content": "### 04 하이브리드 검색 (Self-Query)\ngemma가 질문을 {mode + 필터 + 의미어}로 분해:\n- **search**: 경력·지역·기술=하드필터(WHERE) + KURE 임베딩 벡터랭킹(ORDER BY)\n- **aggregate**: 통계/순위는 검증된 SELECT 집계\n\n키워드가 안 겹쳐도 의미로 찾고, 경력/지역은 반드시 만족. 결과는 RTF/DOCX로도 전송.\n\n**관련도 컷**: minScore(기본0.5) 이상만. 갯수 제한 없음.",
         "height": 240,
         "width": 380,
         "color": 7
