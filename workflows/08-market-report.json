@@ -15,7 +15,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT (SELECT count(*) FROM jobs WHERE status='done') AS total,\n (SELECT count(*) FROM jobs WHERE status='done' AND source='wanted') AS wanted,\n (SELECT count(*) FROM jobs WHERE status='done' AND source='jumpit') AS jumpit,\n (SELECT round(avg(min_career),1) FROM jobs WHERE status='done' AND min_career IS NOT NULL) AS avg_career,\n (SELECT count(DISTINCT s) FROM jobs, unnest(tech_stacks) s WHERE status='done' AND s<>'') AS tech_kinds,\n (SELECT min(collected_at)::date FROM jobs WHERE status='done') AS from_date,\n (SELECT max(collected_at)::date FROM jobs WHERE status='done') AS to_date",
+        "query": "SELECT (SELECT count(*) FROM jobs WHERE status='done') AS total,\n (SELECT count(*) FROM jobs WHERE status='done' AND source='wanted') AS wanted,\n (SELECT count(*) FROM jobs WHERE status='done' AND source='jumpit') AS jumpit,\n (SELECT round(avg(min_career),1) FROM jobs WHERE status='done' AND min_career IS NOT NULL) AS avg_career,\n (SELECT count(DISTINCT s) FROM jobs, unnest(tech_stacks) s WHERE status='done' AND s<>'') AS tech_kinds,\n (SELECT (min(collected_at)::date)::text FROM jobs WHERE status='done') AS from_date,\n (SELECT (max(collected_at)::date)::text FROM jobs WHERE status='done') AS to_date",
         "options": {}
       },
       "id": "n08-요약",

@@ -10,3 +10,4 @@ data/postgres/
 data/output/*.rtf
 data/output/*.docx
 data/rtf2docx.log
+data/output/*.html
