@@ -1,0 +1,370 @@
+{
+  "name": "07 메일 확인 (Mail Checker)",
+  "nodes": [
+    {
+      "parameters": {
+        "postProcessAction": "nothing",
+        "format": "resolved",
+        "options": {}
+      },
+      "id": "n07-imap",
+      "name": "Email 트리거 (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "g1",
+              "name": "classModel",
+              "value": "kanana-1.5-8b-instruct-2505-mlx",
+              "type": "string"
+            },
+            {
+              "id": "g2",
+              "name": "discordWebhookUrl",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "n07-cfg",
+      "name": "설정 (Config)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// IMAP 메일에서 필드 추출. message_id 없으면 대체키 생성. [Each Item]\nconst j = $json;\nconst subject = (j.subject || '').toString();\nconst fr = j.from;\nconst from = (fr && (fr.text || (fr.value && fr.value[0] && fr.value[0].address))) || (typeof fr==='string'?fr:'') || '';\nconst received_at = j.date || null;\nconst body = (j.text || j.textAsHtml || (typeof j.html==='string'?j.html:'') || '').toString().replace(/\\s+/g,' ').slice(0,3000);\nlet message_id = j.messageId || (j.headers && (j.headers['message-id']||j.headers['Message-ID'])) || '';\nif (!message_id) message_id = 'h:' + subject + '|' + from + '|' + (received_at||'');\nreturn { json: { message_id, subject, from, received_at, body } };"
+      },
+      "id": "n07-prep",
+      "name": "준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 분류 요청 본문 구성 (Kanana, json_schema). [Each Item]\nconst p = $json;\nconst sys = `너는 채용 관련 이메일을 분류하는 도우미다. 아래 status 중 하나로 분류한다.\n- pass: 서류/최종 합격 통보\n- interview: 면접·코딩테스트·과제 등 다음 전형 진행 안내(일정 잡아야 함)\n- reject: 불합격/탈락 통보\n- other: 채용과 무관하거나 단순 접수확인/광고/뉴스레터\ncompany=회사명(모르면 \"\"), summary=핵심을 한국어 한 줄로.`;\nconst schema = { type:\"object\", additionalProperties:false, properties:{\n  status:{type:\"string\", enum:[\"pass\",\"interview\",\"reject\",\"other\"]},\n  company:{type:\"string\"}, summary:{type:\"string\"} }, required:[\"status\",\"company\",\"summary\"] };\nconst body = { model: $('설정 (Config)').first().json.classModel,\n  messages:[{role:\"system\",content:sys},{role:\"user\",content:`제목: ${p.subject}\\n발신: ${p.from}\\n본문: ${p.body}`}],\n  temperature:0.1, max_tokens:300, tools:[],\n  response_format:{type:\"json_schema\", json_schema:{name:\"cls\", schema}} };\nreturn { json: { body } };"
+      },
+      "id": "n07-clsprep",
+      "name": "분류 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:1234/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "n07-llm",
+      "name": "LLM 분류 (Kanana)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 분류결과 → INSERT SQL. other는 최소저장(개인정보 보호). ON CONFLICT로 중복방지. [Each Item]\nconst m = $('준비').item.json;\nlet content=''; try { content = $json.choices[0].message.content; } catch(e){}\nlet cls={}; try { cls = JSON.parse(content); } catch(e){}\nconst status = ['pass','interview','reject','other'].includes(cls.status) ? cls.status : 'other';\nconst esc = (v)=> v==null ? 'NULL' : `'${String(v).replace(/'/g,\"''\")}'`;\nconst recv = m.received_at ? `${esc(m.received_at)}::timestamptz` : 'NULL';\nlet sql;\nif (status==='other') {\n  sql = `INSERT INTO applications(message_id,status,received_at) VALUES(${esc(m.message_id)},'other',${recv}) ON CONFLICT(message_id) DO NOTHING RETURNING message_id,status,company,summary;`;\n} else {\n  sql = `INSERT INTO applications(message_id,company,status,email_subject,email_from,summary,received_at) VALUES(${esc(m.message_id)},${esc(cls.company||'')},'${status}',${esc(m.subject)},${esc(m.from)},${esc(cls.summary||'')},${recv}) ON CONFLICT(message_id) DO NOTHING RETURNING message_id,status,company,summary;`;\n}\nreturn { json: { sql } };"
+      },
+      "id": "n07-savegen",
+      "name": "저장 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "n07-saveexec",
+      "name": "저장 실행",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1320,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "NIMisLmbrBSfv9Nt",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "other",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "n07-if",
+      "name": "알림 대상?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 새로 삽입된 결과만 → 디스코드 payload + notified UPDATE 준비. [Each Item]\nconst r = $json;\nconst icon = ({pass:'🎉',interview:'📅',reject:'😢'})[r.status] || '📩';\nconst label = ({pass:'서류/최종 합격',interview:'면접·전형 안내',reject:'불합격'})[r.status] || r.status;\nconst content = `${icon} **[${r.company||'회사미상'}]** ${label}\\n> ${(r.summary||'').slice(0,200)}`;\nconst esc = (v)=> String(v).replace(/'/g,\"''\");\nreturn { json: {\n  webhook: $('설정 (Config)').first().json.discordWebhookUrl,\n  discordBody: JSON.stringify({ content }),\n  notifiedSql: `UPDATE applications SET notified_at=now() WHERE message_id='${esc(r.message_id)}';`\n} };"
+      },
+      "id": "n07-notgen",
+      "name": "알림·마킹 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhook }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.discordBody }}",
+        "options": {}
+      },
+      "id": "n07-discord",
+      "name": "디스코드 전송",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        220
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('알림·마킹 생성').item.json.notifiedSql }}",
+        "options": {}
+      },
+      "id": "n07-notexec",
+      "name": "notified 실행",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2200,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "NIMisLmbrBSfv9Nt",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### 07 메일 확인 (Mail Checker)\nIMAP(Gmail 앱비번)로 안읽음 메일 수신 → Kanana 분류(합격/불합격/면접/기타) → applications 기록 → 디스코드 알림.\n\n**설정 필요**: ① IMAP 트리거 노드에 Gmail 자격증명(imap.gmail.com:993, 앱비밀번호) ② Config의 discordWebhookUrl.\n- 중복방지: message_id UNIQUE + ON CONFLICT (새 메일만 알림)\n- other는 최소저장(개인정보 보호), 읽음상태 안 바꿈",
+        "height": 260,
+        "width": 380,
+        "color": 3
+      },
+      "id": "n07-note",
+      "name": "메모",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        440,
+        -20
+      ]
+    }
+  ],
+  "connections": {
+    "Email 트리거 (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "설정 (Config)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "설정 (Config)": {
+      "main": [
+        [
+          {
+            "node": "준비",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "준비": {
+      "main": [
+        [
+          {
+            "node": "분류 준비",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "분류 준비": {
+      "main": [
+        [
+          {
+            "node": "LLM 분류 (Kanana)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM 분류 (Kanana)": {
+      "main": [
+        [
+          {
+            "node": "저장 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "저장 생성": {
+      "main": [
+        [
+          {
+            "node": "저장 실행",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "저장 실행": {
+      "main": [
+        [
+          {
+            "node": "알림 대상?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "알림 대상?": {
+      "main": [
+        [
+          {
+            "node": "알림·마킹 생성",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "알림·마킹 생성": {
+      "main": [
+        [
+          {
+            "node": "디스코드 전송",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "디스코드 전송": {
+      "main": [
+        [
+          {
+            "node": "notified 실행",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
