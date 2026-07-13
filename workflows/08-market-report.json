@@ -1,0 +1,221 @@
+{
+  "name": "08 시장 리포트 (Market Report)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "n08-manual",
+      "name": "수동 실행",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT (SELECT count(*) FROM jobs WHERE status='done') AS total,\n (SELECT count(*) FROM jobs WHERE status='done' AND source='wanted') AS wanted,\n (SELECT count(*) FROM jobs WHERE status='done' AND source='jumpit') AS jumpit,\n (SELECT round(avg(min_career),1) FROM jobs WHERE status='done' AND min_career IS NOT NULL) AS avg_career,\n (SELECT count(DISTINCT s) FROM jobs, unnest(tech_stacks) s WHERE status='done' AND s<>'') AS tech_kinds,\n (SELECT min(collected_at)::date FROM jobs WHERE status='done') AS from_date,\n (SELECT max(collected_at)::date FROM jobs WHERE status='done') AS to_date",
+        "options": {}
+      },
+      "id": "n08-요약",
+      "name": "요약",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FwDuNNPnm7VCKyXU",
+          "name": "Postgres (readonly)"
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s AS tech, count(*) AS cnt FROM jobs, unnest(tech_stacks) s WHERE status='done' AND s<>'' GROUP BY s ORDER BY cnt DESC LIMIT 15",
+        "options": {}
+      },
+      "id": "n08-기술 TOP",
+      "name": "기술 TOP",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        260
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FwDuNNPnm7VCKyXU",
+          "name": "Postgres (readonly)"
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT CASE WHEN min_career=0 THEN '신입' WHEN min_career BETWEEN 1 AND 2 THEN '주니어(1-2)' WHEN min_career BETWEEN 3 AND 5 THEN '미들(3-5)' ELSE '시니어(6+)' END AS bucket,\n count(*) AS cnt, min(min_career) AS ord FROM jobs WHERE status='done' AND min_career IS NOT NULL GROUP BY bucket ORDER BY ord",
+        "options": {}
+      },
+      "id": "n08-경력 분포",
+      "name": "경력 분포",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FwDuNNPnm7VCKyXU",
+          "name": "Postgres (readonly)"
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT source, count(*) AS cnt, round(avg(min_career),1) AS avg_career FROM jobs WHERE status='done' GROUP BY source ORDER BY cnt DESC",
+        "options": {}
+      },
+      "id": "n08-소스별",
+      "name": "소스별",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        540
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FwDuNNPnm7VCKyXU",
+          "name": "Postgres (readonly)"
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// DB 집계 → 자체완결 HTML 리포트 조립 (외부 의존 0, 라이트/다크).\nconst esc = (s)=> String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');\nconst S = $('요약').first().json;\nconst tech = $('기술 TOP').all().map(i=>i.json);\nconst career = $('경력 분포').all().map(i=>i.json);\nconst src = $('소스별').all().map(i=>i.json);\nconst maxT = Math.max(1, ...tech.map(t=>Number(t.cnt)));\nconst maxC = Math.max(1, ...career.map(c=>Number(c.cnt)));\nconst now = new Date(); const pad=n=>String(n).padStart(2,'0');\nconst ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;\nconst srcName = s => s==='wanted'?'원티드':s==='jumpit'?'점프잇':s;\nconst techBars = tech.map(t=>`<div class=\"row\"><div class=\"lbl\" title=\"${esc(t.tech)}\">${esc(t.tech)}</div><div class=\"track\"><div class=\"fill\" style=\"width:${(t.cnt/maxT*100).toFixed(1)}%\"></div></div><div class=\"val\">${t.cnt}</div></div>`).join('');\nconst careerBars = career.map(c=>`<div class=\"row\"><div class=\"lbl\">${esc(c.bucket)}</div><div class=\"track\"><div class=\"fill fill2\" style=\"width:${(c.cnt/maxC*100).toFixed(1)}%\"></div></div><div class=\"val\">${c.cnt}</div></div>`).join('');\nconst srcCards = src.map(s=>`<div class=\"scard\"><div class=\"sname\">${esc(srcName(s.source))}</div><div class=\"snum\">${s.cnt}<span>건</span></div><div class=\"ssub\">평균 요구경력 ${s.avg_career==null?'-':s.avg_career}년</div></div>`).join('');\nconst card = (k,v,u)=>`<div class=\"card\"><div class=\"k\">${k}</div><div class=\"v\">${v}${u?`<span> ${u}</span>`:''}</div></div>`;\nconst html = `<!doctype html>\n<html lang=\"ko\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>채용 시장 리포트</title>\n<style>\n*{box-sizing:border-box;margin:0;padding:0}\n:root{--bg:#f6f7fb;--card:#fff;--ink:#1a1a2e;--sub:#6b7280;--line:#e5e7eb;--accent:#6366f1;--accent2:#8b5cf6;--track:#eef0f6}\n@media(prefers-color-scheme:dark){:root{--bg:#0f1117;--card:#1a1d29;--ink:#e8eaf0;--sub:#9096a8;--line:#262a38;--accent:#818cf8;--accent2:#a78bfa;--track:#232735}}\nbody{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;line-height:1.5;padding:32px 16px}\n.wrap{max-width:920px;margin:0 auto}\nheader{margin-bottom:26px}\nheader h1{font-size:28px;font-weight:800;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}\nheader p{color:var(--sub);font-size:14px;margin-top:6px}\n.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:26px}\n.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}\n.card .k{color:var(--sub);font-size:13px}\n.card .v{font-size:26px;font-weight:800;margin-top:4px}\n.card .v span{font-size:13px;font-weight:600;color:var(--sub)}\n.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;margin-bottom:22px}\n.panel h2{font-size:17px;font-weight:700;margin-bottom:16px}\n.row{display:grid;grid-template-columns:130px 1fr 46px;align-items:center;gap:12px;margin-bottom:9px}\n.lbl{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.track{background:var(--track);border-radius:8px;height:22px;overflow:hidden}\n.fill{height:100%;border-radius:8px;background:linear-gradient(90deg,var(--accent),var(--accent2));min-width:3px}\n.fill2{background:linear-gradient(90deg,#10b981,#34d399)}\n.val{font-size:13px;font-weight:700;text-align:right;color:var(--sub)}\n.scards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}\n.scard{background:var(--track);border-radius:12px;padding:16px;text-align:center}\n.sname{font-weight:700;font-size:15px}\n.snum{font-size:30px;font-weight:800;margin:6px 0}\n.snum span{font-size:14px;color:var(--sub);font-weight:600}\n.ssub{font-size:13px;color:var(--sub)}\nfooter{color:var(--sub);font-size:12px;text-align:center;margin-top:22px}\n</style></head><body><div class=\"wrap\">\n<header><h1>채용 시장 분석 리포트</h1><p>수집 공고 ${S.total}건 기준 · AI/개발 직군 · ${S.from_date} ~ ${S.to_date}</p></header>\n<section class=\"cards\">${card('총 공고',S.total,'건')}${card('원티드 / 점프잇',`${S.wanted} / ${S.jumpit}`)}${card('평균 요구경력',S.avg_career==null?'-':S.avg_career,'년')}${card('기술 종류',S.tech_kinds,'종')}</section>\n<section class=\"panel\"><h2>🔧 기술스택 수요 TOP 15</h2>${techBars}</section>\n<section class=\"panel\"><h2>👤 요구 경력 분포</h2>${careerBars}</section>\n<section class=\"panel\"><h2>🌐 소스별 비교</h2><div class=\"scards\">${srcCards}</div></section>\n<footer>생성 ${ts} · n8n 08 시장 리포트 워크플로우 · 로컬 자동 생성</footer>\n</div></body></html>`;\nconst binary = await this.helpers.prepareBinaryData(Buffer.from(html,'utf-8'),'market-report.html','text/html');\nreturn [{ json:{ filename:'market-report.html', bytes: html.length }, binary:{ data: binary } }];"
+      },
+      "id": "n08-html",
+      "name": "HTML 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/data/output/{{ $json.filename }}",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "n08-save",
+      "name": "파일 저장",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 08 시장 리포트 (Market Report)\n수동 실행 → DB집계 → 자체완결 HTML(순수 CSS 차트) → data/output/market-report.html.\n\n- 기술스택 수요 TOP15 / 경력분포 / 소스별\n- 외부 의존 0, 라이트·다크 대응\n- 스케줄 추가하면 자동 갱신 가능",
+        "height": 220,
+        "width": 340,
+        "color": 6
+      },
+      "id": "n08-note",
+      "name": "메모",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        460,
+        20
+      ]
+    }
+  ],
+  "connections": {
+    "수동 실행": {
+      "main": [
+        [
+          {
+            "node": "요약",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "요약": {
+      "main": [
+        [
+          {
+            "node": "기술 TOP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "기술 TOP": {
+      "main": [
+        [
+          {
+            "node": "경력 분포",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "경력 분포": {
+      "main": [
+        [
+          {
+            "node": "소스별",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "소스별": {
+      "main": [
+        [
+          {
+            "node": "HTML 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML 생성": {
+      "main": [
+        [
+          {
+            "node": "파일 저장",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
