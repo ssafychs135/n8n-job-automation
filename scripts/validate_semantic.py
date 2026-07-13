@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 # 검증: 같은 질문에 대해 키워드검색(ILIKE) vs 의미검색(pgvector) 비교.
 # 키워드가 놓친 관련 공고를 의미검색이 잡는지 입증.
-import json, urllib.request
+import json, urllib.request, os
 import psycopg2
 
-PG = dict(host="localhost", port=5432, dbname="jobs", user="n8n", password="change_me_local_pw")
+def _env(key):
+    p = os.path.join(os.path.dirname(__file__), "..", ".env")
+    try:
+        for line in open(p):
+            if line.startswith(key + "="):
+                return line.split("=", 1)[1].strip()
+    except FileNotFoundError:
+        pass
+    return os.environ.get(key, "")
+
+PG = dict(host="localhost", port=5432, dbname="jobs", user="n8n", password=_env("POSTGRES_PASSWORD"))
 
 def embed(text):
     req = urllib.request.Request("http://localhost:1234/v1/embeddings",

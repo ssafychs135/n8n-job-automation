@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 # 기존 done 공고(embedding IS NULL)를 KURE-v1로 일괄 임베딩하는 일회성 백필.
 # 상시 임베딩은 n8n 05-embedder 워크플로우가 담당. 이 스크립트는 대량 초기 적재용.
-import json, urllib.request, sys
+import json, urllib.request, sys, os
 import psycopg2
 
-PG = dict(host="localhost", port=5432, dbname="jobs", user="n8n", password="change_me_local_pw")
+def _env(key):
+    p = os.path.join(os.path.dirname(__file__), "..", ".env")
+    try:
+        for line in open(p):
+            if line.startswith(key + "="):
+                return line.split("=", 1)[1].strip()
+    except FileNotFoundError:
+        pass
+    return os.environ.get(key, "")
+
+PG = dict(host="localhost", port=5432, dbname="jobs", user="n8n", password=_env("POSTGRES_PASSWORD"))
 LM_URL = "http://localhost:1234/v1/embeddings"
 MODEL = "text-embedding-kure-v1"
 BATCH = 16
