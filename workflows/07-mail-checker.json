@@ -31,6 +31,12 @@
               "name": "discordWebhookUrl",
               "value": "",
               "type": "string"
+            },
+            {
+              "id": "g3",
+              "name": "gmailUserIndex",
+              "value": "0",
+              "type": "string"
             }
           ]
         },
@@ -173,7 +179,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// 새로 삽입된 결과만 → 디스코드 payload + notified UPDATE 준비. [Each Item]\nconst r = $json;\nconst icon = ({pass:'🎉',interview:'📅',reject:'😢'})[r.status] || '📩';\nconst label = ({pass:'서류/최종 합격',interview:'면접·전형 안내',reject:'불합격'})[r.status] || r.status;\nconst content = `${icon} **[${r.company||'회사미상'}]** ${label}\\n> ${(r.summary||'').slice(0,200)}`;\nconst esc = (v)=> String(v).replace(/'/g,\"''\");\nreturn { json: {\n  webhook: $('설정 (Config)').first().json.discordWebhookUrl,\n  discordBody: JSON.stringify({ content }),\n  notifiedSql: `UPDATE applications SET notified_at=now() WHERE message_id='${esc(r.message_id)}';`\n} };"
+        "jsCode": "// 새로 삽입된 결과만 → 디스코드 payload(+메일 링크) + notified UPDATE. [Each Item]\nconst r = $json;\nconst icon = ({pass:'🎉',interview:'📅',reject:'😢'})[r.status] || '📩';\nconst label = ({pass:'서류/최종 합격',interview:'면접·전형 안내',reject:'불합격'})[r.status] || r.status;\nconst idx = $('설정 (Config)').first().json.gmailUserIndex || '0';\nconst mid = r.message_id || '';\nlet link = '';\nif (mid && !mid.startsWith('h:')) link = `https://mail.google.com/mail/u/${idx}/#search/rfc822msgid:` + encodeURIComponent(mid.replace(/[<>]/g,''));\nconst content = `${icon} **[${r.company||'회사미상'}]** ${label}\\n> ${(r.summary||'').slice(0,200)}` + (link ? `\\n📧 메일 열기: ${link}` : '');\nconst esc = (v)=> String(v).replace(/'/g,\"''\");\nreturn { json: {\n  webhook: $('설정 (Config)').first().json.discordWebhookUrl,\n  discordBody: JSON.stringify({ content }),\n  notifiedSql: `UPDATE applications SET notified_at=now() WHERE message_id='${esc(r.message_id)}';`\n} };"
       },
       "id": "n07-notgen",
       "name": "알림·마킹 생성",
