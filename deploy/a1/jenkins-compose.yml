@@ -1,0 +1,20 @@
+# A1 자체호스팅 Jenkins. host docker.sock으로 host 데몬 제어(docker-out-of-docker).
+# ★ /home/ubuntu/n8n-pjt 를 '동일 경로'로 마운트해야 컨테이너가 돌린 docker compose의
+#   상대 바인드마운트(./data 등)가 host 데몬에서 올바른 host 경로로 해석된다.
+services:
+  jenkins:
+    build: ./jenkins
+    image: n8n-cicd-jenkins:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    group_add:
+      - "${DOCKER_GID}"          # host docker 그룹 gid (.env에 기록)
+    environment:
+      - JENKINS_ADMIN_PASSWORD=${JENKINS_ADMIN_PASSWORD}
+      - CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
+    volumes:
+      - ./jenkins/.data:/var/jenkins_home
+      - ./jenkins/casc.yaml:/var/jenkins_home/casc.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/ubuntu/n8n-pjt:/home/ubuntu/n8n-pjt   # 경로 일치(핵심)
