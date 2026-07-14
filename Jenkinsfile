@@ -31,7 +31,6 @@ pipeline {
     }
 
     stage('CD: deploy infra') {
-      when { branch 'main' }
       steps {
         sh '''
           cd ${DEPLOY_DIR}
@@ -44,7 +43,6 @@ pipeline {
     }
 
     stage('CD: import workflows') {
-      when { branch 'main' }
       steps {
         // import는 활성 워크플로우를 비활성화함 → JSON의 active 값 기준으로 재설정 후 restart 1회.
         sh '''
@@ -60,7 +58,6 @@ pipeline {
     }
 
     stage('smoke test') {
-      when { branch 'main' }
       steps {
         // ★ localhost는 n8n '컨테이너 안'에서 검사(Jenkins 컨테이너 localhost 아님)
         sh '''
