@@ -46,9 +46,14 @@ pipeline {
     stage('CD: import workflows') {
       when { branch 'main' }
       steps {
+        // import는 활성 워크플로우를 비활성화함 → JSON의 active 값 기준으로 재설정 후 restart 1회.
         sh '''
           cd ${DEPLOY_DIR}
           docker compose exec -T n8n n8n import:workflow --separate --input=/workflows
+          for f in workflows/*.json; do
+            id=$(jq -r .id "$f"); act=$(jq -r .active "$f")
+            docker compose exec -T n8n n8n update:workflow --id="$id" --active="$act"
+          done
           docker compose restart n8n
         '''
       }
