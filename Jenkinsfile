@@ -32,9 +32,11 @@ pipeline {
 
     stage('CD: deploy infra') {
       steps {
+        // CI가 검증한 바로 그 커밋($GIT_COMMIT)에 고정 배포(빌드 도중 새 커밋이 들어와도
+        // 미검증 tip을 배포하지 않도록 — TOCTOU 방지). Jenkins가 GIT_COMMIT을 env로 제공.
         sh '''
           cd ${DEPLOY_DIR}
-          git fetch -q origin main && git reset --hard origin/main
+          git fetch -q origin main && git reset --hard "$GIT_COMMIT"
           cp deploy/a1/docker-compose.override.yml docker-compose.override.yml
           cp deploy/a1/Caddyfile caddy/Caddyfile
           docker compose up -d
