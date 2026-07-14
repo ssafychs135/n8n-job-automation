@@ -5,7 +5,7 @@ jenkins:
     local:
       allowsSignup: false
       users:
-        - id: admin
+        - id: chs135
           password: "${JENKINS_ADMIN_PASSWORD}"
   authorizationStrategy:
     loggedInUsersCanDoAnything:
