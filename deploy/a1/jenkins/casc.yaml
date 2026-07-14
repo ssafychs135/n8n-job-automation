@@ -18,11 +18,11 @@ jobs:
       pipelineJob('n8n-cicd') {
         description('n8n 스택 CI→CD (GitOps)')
         definition {
-          cpsScmFlowDefinition {
+          cpsScm {
             scm {
-              scmGit {
+              git {
                 remote { url('https://github.com/ssafychs135/n8n-job-automation.git') }
-                branches('*/main')
+                branch('*/main')
               }
             }
             scriptPath('Jenkinsfile')
