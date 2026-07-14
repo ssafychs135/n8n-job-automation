@@ -2,7 +2,7 @@
 // CI: 6검사 병렬 게이트 → CD(main): 배포·워크플로우 import·restart·스모크 → Discord 알림
 pipeline {
   agent any
-  options { timestamps(); disableConcurrentBuilds() }
+  options { disableConcurrentBuilds() }
   triggers { pollSCM('H/3 * * * *') }
   environment { DEPLOY_DIR = '/home/ubuntu/n8n-pjt' }
 
