@@ -8,8 +8,11 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"
+    # ★ host ubuntu(uid 1001)로 실행 → CD가 /home/ubuntu/n8n-pjt(.git·파일, 1001 소유)에서
+    #   git pull/docker compose를 쓸 수 있게 소유권 정렬. .data도 1001 소유로 pre-create 필요.
+    user: "1001:1001"
     group_add:
-      - "${DOCKER_GID}"          # host docker 그룹 gid (.env에 기록)
+      - "${DOCKER_GID}"          # host docker 그룹 gid (.env에 기록) — docker.sock 접근용
     environment:
       - JENKINS_ADMIN_PASSWORD=${JENKINS_ADMIN_PASSWORD}
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
