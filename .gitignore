@@ -4,7 +4,6 @@ data/n8n/
 .env
 # 워크플로우가 생성하는 출력물
 data/output/*.md
-!data/output/.gitkeep
 # Postgres 데이터 (DB 파일)
 data/postgres/
 data/output/*.rtf
