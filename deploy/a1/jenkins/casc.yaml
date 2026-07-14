@@ -1,0 +1,33 @@
+jenkins:
+  systemMessage: "n8n 취업 자동화 CI/CD (A1 self-hosted)"
+  numExecutors: 1
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: admin
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+unclassified:
+  location:
+    url: "http://localhost:8080/"
+jobs:
+  - script: >
+      pipelineJob('n8n-cicd') {
+        description('n8n 스택 CI→CD (GitOps)')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url('https://github.com/ssafychs135/n8n-job-automation.git') }
+                branch('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(true)
+          }
+        }
+        triggers { scm('H/3 * * * *') }
+      }

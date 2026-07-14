@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch n8n output dir for new RTF files
+
+[Path]
+# data/output이 수정되면(검색 워크플로우가 RTF 저장) rtf2docx.service 실행.
+PathModified=/home/ubuntu/n8n-pjt/data/output
+Unit=rtf2docx.service
+
+[Install]
+WantedBy=multi-user.target

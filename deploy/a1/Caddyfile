@@ -1,0 +1,10 @@
+# A1 인증주입 프록시: 컨테이너의 host.docker.internal:1234 호출을
+# 맥 LM Studio(lm.chs135.com)로 포워딩하며 Cloudflare Access 토큰을 자동 주입.
+# 워크플로우는 수정 없이 그대로 :1234를 부르면 됨. 엔드포인트가 바뀌면 이 파일만 수정.
+:1234 {
+	reverse_proxy https://lm.chs135.com {
+		header_up Host lm.chs135.com
+		header_up CF-Access-Client-Id {env.CF_ID}
+		header_up CF-Access-Client-Secret {env.CF_SECRET}
+	}
+}

@@ -49,6 +49,23 @@ CREATE INDEX IF NOT EXISTS idx_jobs_notify       ON jobs (status, notified_at); 
 -- 의미검색 최근접(HNSW, 코사인). 수백건이면 정확검색도 충분하나 확장성 위해.
 CREATE INDEX IF NOT EXISTS idx_jobs_embedding     ON jobs USING hnsw (embedding vector_cosine_ops);
 
+-- === 지원 결과 추적 (Workflow B: 이메일 확인) ===
+-- 메일 분류 결과(합격/불합격/면접/기타)를 기록. message_id로 재처리 방지.
+CREATE TABLE IF NOT EXISTS applications (
+  id            BIGSERIAL PRIMARY KEY,
+  message_id    TEXT UNIQUE,          -- 이메일 Message-ID (중복 방지 키)
+  company       TEXT,
+  status        TEXT,                 -- pass|reject|interview|other
+  email_subject TEXT,
+  email_from    TEXT,
+  summary       TEXT,
+  received_at   TIMESTAMPTZ,          -- 메일 수신 시각
+  notified_at   TIMESTAMPTZ,          -- 디스코드 전송 시각
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
+GRANT SELECT ON applications TO jobs_ro;
+
 -- 참고: 큐/통계 예시 쿼리
 --  · 대기 건수:          SELECT status, count(*) FROM jobs GROUP BY status;
 --  · 워커 배치 집기:      SELECT * FROM jobs WHERE status='pending' ORDER BY collected_at LIMIT 20;

@@ -4,9 +4,15 @@ data/n8n/
 .env
 # 워크플로우가 생성하는 출력물
 data/output/*.md
-!data/output/.gitkeep
 # Postgres 데이터 (DB 파일)
 data/postgres/
 data/output/*.rtf
 data/output/*.docx
 data/rtf2docx.log
+data/output/*.html
+scripts/oci_grabber_params.json
+.oci/
+data/oci_grabber.log
+data/oci_grabber_launchd.log
+# Jenkins 영속 데이터 (자격증명·잡 히스토리 포함)
+deploy/a1/jenkins/.data/
