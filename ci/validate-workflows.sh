@@ -12,6 +12,9 @@ for f in "${files[@]}"; do
   [ -n "$(jq -r '.name // empty' "$f")" ] || errs+=("name 누락")
   [ "$(jq -r '.nodes | type' "$f")" = "array" ] || errs+=("nodes 배열 아님")
   [ "$(jq -r '.connections | type' "$f")" = "object" ] || errs+=("connections 객체 아님")
+  # CD import/재활성화가 .id(upsert 키)·.active(재설정)에 의존 → 여기서 강제
+  [ "$(jq -r '.id | type' "$f")" = "string" ] || errs+=("id(문자열) 누락 — import가 중복생성/CD중단됨")
+  [ "$(jq -r '.active | type' "$f")" = "boolean" ] || errs+=("active(불리언) 누락")
   if [ ${#errs[@]} -gt 0 ]; then
     printf 'FAIL %s: %s\n' "$(basename "$f")" "$(IFS=', '; echo "${errs[*]}")"; rc=1
   else
