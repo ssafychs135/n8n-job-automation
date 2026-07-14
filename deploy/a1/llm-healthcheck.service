@@ -1,0 +1,8 @@
+[Unit]
+Description=LLM health check (alert Discord on down/recover)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/home/ubuntu/n8n-pjt/scripts/llm_healthcheck.sh
