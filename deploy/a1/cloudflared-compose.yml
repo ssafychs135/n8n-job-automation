@@ -1,0 +1,9 @@
+# A1 UI 노출용 cloudflared 터널. n8n.chs135.com/jenkins.chs135.com → localhost:5678/8080.
+# network_mode: host 라 A1 호스트의 127.0.0.1 발행포트(n8n·Jenkins)에 직접 접근.
+# ingress·DNS는 Cloudflare 대시보드/API에서 원격 관리(토큰 기반). 접근은 Access(이메일 OTP)로 보호.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    network_mode: host
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
