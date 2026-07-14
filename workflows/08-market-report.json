@@ -1,5 +1,6 @@
 {
   "name": "08 시장 리포트 (Market Report)",
+  "active": false,
   "nodes": [
     {
       "parameters": {},
@@ -216,6 +217,5 @@
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "active": false
+  }
 }

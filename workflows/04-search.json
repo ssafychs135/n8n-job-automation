@@ -1,5 +1,6 @@
 {
   "name": "04 하이브리드 검색 (Self-Query)",
+  "active": true,
   "nodes": [
     {
       "parameters": {
@@ -12,8 +13,9 @@
       "typeVersion": 1.1,
       "position": [
         0,
-        300
-      ]
+        304
+      ],
+      "webhookId": "5f022089-0418-4bb5-a1cc-33e1613e1873"
     },
     {
       "parameters": {
@@ -40,7 +42,7 @@
             {
               "id": "c4",
               "name": "discordWebhookUrl",
-              "value": "",
+              "value": "={{ $env.DISCORD_WEBHOOK_URL }}",
               "type": "string"
             },
             {
@@ -59,8 +61,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        220,
-        300
+        224,
+        304
       ]
     },
     {
@@ -72,8 +74,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        440,
-        300
+        448,
+        304
       ]
     },
     {
@@ -101,8 +103,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        660,
-        300
+        672,
+        304
       ],
       "onError": "continueRegularOutput"
     },
@@ -116,7 +118,7 @@
       "typeVersion": 2,
       "position": [
         880,
-        300
+        304
       ]
     },
     {
@@ -144,8 +146,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1100,
-        300
+        1104,
+        304
       ],
       "onError": "continueRegularOutput"
     },
@@ -158,8 +160,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1320,
-        300
+        1328,
+        304
       ]
     },
     {
@@ -173,8 +175,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1540,
-        300
+        1552,
+        304
       ],
       "credentials": {
         "postgres": {
@@ -194,7 +196,7 @@
       "typeVersion": 2,
       "position": [
         1760,
-        300
+        304
       ]
     },
     {
@@ -207,14 +209,13 @@
       "typeVersion": 2,
       "position": [
         1760,
-        520
+        528
       ]
     },
     {
       "parameters": {
         "operation": "write",
         "fileName": "=/data/output/{{ $json.filename }}",
-        "dataPropertyName": "data",
         "options": {}
       },
       "id": "ea129dee-a25c-4a77-8ab6-8cacc8cbccda",
@@ -222,8 +223,8 @@
       "type": "n8n-nodes-base.readWriteFile",
       "typeVersion": 1,
       "position": [
-        1980,
-        440
+        1984,
+        448
       ]
     },
     {
@@ -238,8 +239,8 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        440,
-        20
+        448,
+        32
       ]
     }
   ],
@@ -351,6 +352,5 @@
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "active": false
+  }
 }

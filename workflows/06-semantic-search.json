@@ -1,5 +1,6 @@
 {
   "name": "06 의미검색 (Semantic Search)",
+  "active": false,
   "nodes": [
     {
       "parameters": {
@@ -250,6 +251,5 @@
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "active": false
+  }
 }

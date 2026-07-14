@@ -1,5 +1,6 @@
 {
   "name": "01 수집기 (Collector)",
+  "active": true,
   "nodes": [
     {
       "parameters": {
@@ -28,13 +29,13 @@
             {
               "id": "03e9fde7-62dd-44f9-b148-72d4cd451f98",
               "name": "keywords",
-              "value": "={{ [\"백엔드\", \"Node.js\"] }}",
+              "value": "={{ $env.SEARCH_KEYWORDS.split(',') }}",
               "type": "array"
             },
             {
               "id": "94cf4c88-e4e1-4949-965e-372fbb9689e5",
               "name": "maxPages",
-              "value": 1,
+              "value": 9999,
               "type": "number"
             },
             {
@@ -46,7 +47,7 @@
             {
               "id": "24408dd1-ab37-48c3-999e-20c5ca59f97b",
               "name": "maxCareerYears",
-              "value": 99,
+              "value": 2,
               "type": "number"
             }
           ]
@@ -91,8 +92,8 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_IMPORT",
-          "name": "Postgres (jobs)"
+          "id": "NIMisLmbrBSfv9Nt",
+          "name": "Postgres account"
         }
       }
     },
@@ -174,6 +175,5 @@
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "active": false
+  }
 }

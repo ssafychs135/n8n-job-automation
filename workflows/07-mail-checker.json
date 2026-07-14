@@ -1,5 +1,6 @@
 {
   "name": "07 메일 확인 (Mail Checker)",
+  "active": true,
   "nodes": [
     {
       "parameters": {
@@ -14,7 +15,13 @@
       "position": [
         0,
         300
-      ]
+      ],
+      "credentials": {
+        "imap": {
+          "id": "daApG2WURR3B2XUf",
+          "name": "IMAP account"
+        }
+      }
     },
     {
       "parameters": {
@@ -29,7 +36,7 @@
             {
               "id": "g2",
               "name": "discordWebhookUrl",
-              "value": "",
+              "value": "={{ $env.DISCORD_WEBHOOK_URL }}",
               "type": "string"
             },
             {
@@ -380,6 +387,5 @@
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "active": false
+  }
 }

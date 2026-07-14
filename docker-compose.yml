@@ -32,6 +32,11 @@ services:
       - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE}
       # 코드/AI 노드 실행을 별도 러너 프로세스로 분리(최신 n8n 권장 설정).
       - N8N_RUNNERS_ENABLED=true
+      # 표현식에서 $env 접근 허용(워크플로우가 웹훅·키워드를 env로 읽음 — GitOps 정제).
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      # 비밀·개인 설정은 워크플로우 JSON이 아닌 env로 주입(공개 리포 유출 방지).
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - SEARCH_KEYWORDS=${SEARCH_KEYWORDS}
 
     volumes:
       # n8n 상태 영속화: SQLite DB, 자격증명(credentials), 워크플로우가 여기에 저장됨.

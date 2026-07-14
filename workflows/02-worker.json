@@ -1,5 +1,6 @@
 {
   "name": "02 워커 (Worker)",
+  "active": true,
   "nodes": [
     {
       "parameters": {
@@ -72,8 +73,8 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_IMPORT",
-          "name": "Postgres (jobs)"
+          "id": "NIMisLmbrBSfv9Nt",
+          "name": "Postgres account"
         }
       }
     },
@@ -214,8 +215,8 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_IMPORT",
-          "name": "Postgres (jobs)"
+          "id": "NIMisLmbrBSfv9Nt",
+          "name": "Postgres account"
         }
       }
     },
@@ -249,8 +250,8 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_IMPORT",
-          "name": "Postgres (jobs)"
+          "id": "NIMisLmbrBSfv9Nt",
+          "name": "Postgres account"
         }
       }
     },
@@ -381,6 +382,5 @@
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "active": false
+  }
 }
