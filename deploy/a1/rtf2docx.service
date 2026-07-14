@@ -1,0 +1,8 @@
+[Unit]
+Description=Convert n8n search RTF output to DOCX and post to Discord
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/home/ubuntu/n8n-pjt/scripts/rtf2docx_linux.sh

@@ -1,0 +1,7 @@
+[Unit]
+Description=OCI idle-reclaim keep-alive (short CPU burst)
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/home/ubuntu/n8n-pjt/scripts/keepalive.sh

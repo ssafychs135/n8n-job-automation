@@ -11,3 +11,7 @@ data/output/*.rtf
 data/output/*.docx
 data/rtf2docx.log
 data/output/*.html
+scripts/oci_grabber_params.json
+.oci/
+data/oci_grabber.log
+data/oci_grabber_launchd.log
