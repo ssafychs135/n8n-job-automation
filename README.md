@@ -70,6 +70,14 @@
 
 </details>
 
+## CI/CD (A1 자체호스팅 Jenkins)
+
+리포가 워크플로우의 진실의 원천인 GitOps. `main` push 시 A1의 Jenkins가 폴링→검증→배포.
+
+- **CI**: 워크플로우 JSON 구조 · shellcheck · python 구문 · `docker compose config` · Caddyfile · gitleaks (병렬 게이트)
+- **CD**(통과 시, A1 로컬): `git pull` → `docker compose up -d` → `n8n import:workflow` → `restart`(트리거 재등록) → 스모크(n8n·LLM·DB) → Discord 알림
+- Jenkins는 docker.sock으로 host 데몬 제어, `/home/ubuntu/n8n-pjt` 동일경로 마운트로 바인드마운트 경로 일치. 파이프라인은 리포 `Jenkinsfile`(pipeline as code), Jenkins 구성은 JCasC.
+
 ## 데이터 모델 (PostgreSQL)
 
 - **`jobs`** — 공고 큐 겸 데이터. `status`(pending/done/skipped/failed), `tech_stacks TEXT[]`, `embedding vector(1024)`(HNSW 코사인 인덱스), `min/max_career`, `UNIQUE(source, job_id)`.
