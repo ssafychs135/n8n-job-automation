@@ -9,6 +9,8 @@ services:
     # UI는 SSH 포트포워드로만 접근(공개 노출 없음). 127.0.0.1 전용 바인딩.
     ports: !override
       - "127.0.0.1:5678:5678"
+    volumes:
+      - ./workflows:/workflows:ro   # CD의 import:workflow 소스(GitOps)
 
   postgres:
     # 외부/공개 노출 불필요 — 로컬 전용 바인딩(컨테이너끼리는 compose 네트워크로 통신).
