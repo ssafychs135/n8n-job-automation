@@ -16,6 +16,8 @@ services:
     environment:
       - JENKINS_ADMIN_PASSWORD=${JENKINS_ADMIN_PASSWORD}
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
+      # 초기 설정 마법사 비활성화 — 플러그인·관리자는 JCasC/plugins.txt가 관리하므로 불필요.
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
     volumes:
       - ./jenkins/.data:/var/jenkins_home
       - ./jenkins/casc.yaml:/var/jenkins_home/casc.yaml:ro
