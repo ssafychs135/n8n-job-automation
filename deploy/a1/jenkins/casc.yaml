@@ -26,7 +26,7 @@ jobs:
               }
             }
             scriptPath('Jenkinsfile')
-            lightweight(true)
+            lightweight(false)
           }
         }
         triggers { scm('H/3 * * * *') }
