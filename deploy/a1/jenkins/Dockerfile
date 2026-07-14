@@ -1,9 +1,14 @@
 FROM jenkins/jenkins:lts-jdk17
 USER root
-# CI 도구 + docker CLI. docker.io는 Debian 저장소(GPG 서명)로 설치 → 공급망 검증.
+# CI 도구(Debian 패키지, GPG 서명): jq, shellcheck, python3
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      jq shellcheck python3 curl ca-certificates docker.io \
+      jq shellcheck python3 curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+# docker CLI (정적 바이너리, arm64, sha256 검증 — 데몬은 host docker.sock 사용, CLI만 필요)
+RUN curl -fsSL https://download.docker.com/linux/static/stable/aarch64/docker-27.3.1.tgz -o /tmp/d.tgz \
+    && echo "4da6a6c7502b7ab561675a5ff5ac192d9b49d76d0b8847cf17ade246122279f4  /tmp/d.tgz" | sha256sum -c - \
+    && tar xzf /tmp/d.tgz -C /tmp && mv /tmp/docker/docker /usr/local/bin/docker \
+    && rm -rf /tmp/d.tgz /tmp/docker
 # docker compose v2 플러그인 (arm64, sha256 검증)
 RUN curl -fsSL https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-aarch64 -o /tmp/dc \
     && echo "6e9fbd5daa20dca5d7d89145081ae8155d68ef2928b497d9f85b54fe0f9dbb2c  /tmp/dc" | sha256sum -c - \
