@@ -1,0 +1,120 @@
+{
+  "name": "09 DB 뷰어 (Web Viewer)",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "db",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "id": "22410a8e-af81-4dd3-b804-d04491e77158",
+      "name": "웹훅 (GET /db)",
+      "webhookId": "1f1ff7e8-dc0c-427d-9a39-c6ad6f290dbf"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT company, title, url, locations, min_career, max_career, status, source, tech_stacks, summary, collected_at FROM jobs WHERE status <> 'skipped' ORDER BY collected_at DESC",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        300
+      ],
+      "id": "04937903-5756-4e73-91c8-cdf53f9358bb",
+      "name": "jobs 전체 조회",
+      "credentials": {
+        "postgres": {
+          "id": "FwDuNNPnm7VCKyXU",
+          "name": "Postgres (readonly)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst data = rows.map(r => ({\n  company: r.company||'', title: r.title||'', url: r.url||'', loc: r.locations||'',\n  career: (r.min_career!=null?r.min_career:'') + (r.max_career!=null?('~'+r.max_career):(r.min_career!=null?'+':'')),\n  status: r.status||'', source: r.source||'',\n  tech: Array.isArray(r.tech_stacks)?r.tech_stacks.join(', '):(r.tech_stacks||''),\n  summary: (r.summary||'').slice(0,300),\n  collected: String(r.collected_at||'').slice(0,10)\n}));\nconst html = '<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>n8n DB 뷰어</title><style>' + \"\\n*{box-sizing:border-box}body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:16px;background:#f7f8fa;color:#1a1a1a}\\nh1{font-size:18px;margin:0 0 12px}.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}\\nselect,input,button{padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px}input{min-width:180px}\\nbutton{background:#2d6cdf;color:#fff;border:none;cursor:pointer}\\ntable{width:100%;border-collapse:collapse;background:#fff;font-size:13px}\\nth,td{padding:6px 8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}\\nth{position:sticky;top:0;background:#f0f2f5;z-index:1}\\ntd.tech{color:#555;max-width:220px}a{color:#2d6cdf;text-decoration:none}a:hover{text-decoration:underline}\\n.b{padding:2px 6px;border-radius:10px;font-size:11px}.b-done{background:#e3f5e9;color:#1a7f43}.b-pending{background:#fff3d6;color:#8a6d00}.b-failed{background:#fde3e3;color:#b3261e}\\n\" + '</style></head><body>'\n  + '<h1>공고 DB (<span id=\"cnt\"></span>건)</h1>'\n  + '<div class=\"filters\">상태 <select id=\"fStatus\"></select> 소스 <select id=\"fSource\"></select> 지역 <select id=\"fLoc\"></select> <input id=\"fText\" placeholder=\"회사/제목 빠른 필터\"> <button onclick=\"location.reload()\">새로고침</button></div>'\n  + '<table><thead><tr><th>회사</th><th>제목</th><th>지역</th><th>경력</th><th>상태</th><th>소스</th><th>기술스택</th><th>수집</th></tr></thead><tbody id=\"tb\"></tbody></table>'\n  + '<script>const DATA=' + JSON.stringify(data) + ';' + \"\\nfunction esc(s){return String(s==null?'':s).replace(/[&<>\\\"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;'}[c];});}\\nfunction opt(id,vals,cb){var e=document.getElementById(id);e.innerHTML='<option value=\\\"\\\">\\uc804\\uccb4</option>'+vals.map(function(v){return '<option>'+esc(v)+'</option>';}).join('');e.onchange=cb;}\\nfunction render(){\\n  var s=v('fStatus'),sr=v('fSource'),lc=v('fLoc'),t=v('fText').toLowerCase();\\n  var rows=DATA.filter(function(d){return (!s||d.status===s)&&(!sr||d.source===sr)&&(!lc||(d.loc||'').indexOf(lc)>=0)&&(!t||((d.company||'')+(d.title||'')).toLowerCase().indexOf(t)>=0);});\\n  document.getElementById('cnt').textContent=rows.length;\\n  var h=rows.map(function(d){return '<tr><td>'+esc(d.company)+'</td><td><a href=\\\"'+esc(d.url)+'\\\" target=\\\"_blank\\\" title=\\\"'+esc(d.summary)+'\\\">'+esc(d.title)+'</a></td><td>'+esc(d.loc)+'</td><td>'+esc(d.career)+'</td><td><span class=\\\"b b-'+esc(d.status)+'\\\">'+esc(d.status)+'</span></td><td>'+esc(d.source)+'</td><td class=\\\"tech\\\">'+esc(d.tech)+'</td><td>'+esc(d.collected)+'</td></tr>';}).join('');\\n  document.getElementById('tb').innerHTML=h;\\n}\\nfunction v(id){return document.getElementById(id).value;}\\nfunction uniq(k){return Array.from(new Set(DATA.map(function(d){return d[k];}).filter(Boolean))).sort();}\\nopt('fStatus',uniq('status'),render);opt('fSource',uniq('source'),render);opt('fLoc',uniq('loc'),render);\\ndocument.getElementById('fText').oninput=render;render();\\n\" + '<\\/script>'\n  + '</body></html>';\nreturn { json: { html } };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "id": "14d6c7f7-18f0-4888-b037-1d9d7a4932df",
+      "name": "HTML 생성"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "content-type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        300
+      ],
+      "id": "df73aa4a-b56a-4a61-a7ef-d2b0bb25dc80",
+      "name": "응답 (HTML)"
+    }
+  ],
+  "connections": {
+    "웹훅 (GET /db)": {
+      "main": [
+        [
+          {
+            "node": "jobs 전체 조회",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "jobs 전체 조회": {
+      "main": [
+        [
+          {
+            "node": "HTML 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML 생성": {
+      "main": [
+        [
+          {
+            "node": "응답 (HTML)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "4cHKvpCJis6yC8Uh"
+}
