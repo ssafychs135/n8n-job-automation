@@ -42,7 +42,7 @@
             {
               "id": "74fdacf5-7233-400f-9b6b-48e4b293b082",
               "name": "maxAttempts",
-              "value": 3,
+              "value": 5,
               "type": "number"
             }
           ]
@@ -61,7 +61,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT id, source, job_id, company, title, url, min_career, max_career, attempts FROM jobs WHERE status='pending' ORDER BY collected_at LIMIT {{ $json.batchSize }}",
+        "query": "=SELECT id, source, job_id, company, title, url, min_career, max_career, attempts FROM jobs WHERE status='pending' OR (status='failed' AND attempts < {{ $('설정 (Config)').first().json.maxAttempts }}) ORDER BY collected_at LIMIT {{ $('설정 (Config)').first().json.batchSize }}",
         "options": {}
       },
       "id": "276fefe1-4d90-4d24-8fff-ea9dd36e327a",
@@ -271,6 +271,61 @@
         440,
         20
       ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:1234/v1/models",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        480
+      ],
+      "id": "1250608c-bf40-4ab9-86b9-f5ce55091bbf",
+      "name": "LLM 헬스체크",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "options": {
+          "caseSensitive": true,
+          "typeValidation": "loose",
+          "version": 2
+        },
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f88d5533-aa5a-4161-aae7-79efbb86891c",
+              "leftValue": "={{ Array.isArray($json.data) && $json.data.length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        330,
+        480
+      ],
+      "id": "e843afa8-1d24-4776-9402-873b4c246d5d",
+      "name": "LLM 정상?"
     }
   ],
   "connections": {
@@ -289,7 +344,7 @@
       "main": [
         [
           {
-            "node": "pending 배치 조회",
+            "node": "LLM 헬스체크",
             "type": "main",
             "index": 0
           }
@@ -378,6 +433,29 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "LLM 헬스체크": {
+      "main": [
+        [
+          {
+            "node": "LLM 정상?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM 정상?": {
+      "main": [
+        [
+          {
+            "node": "pending 배치 조회",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   },
