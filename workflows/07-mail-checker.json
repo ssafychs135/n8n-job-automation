@@ -165,23 +165,41 @@
             {
               "id": "cond1",
               "leftValue": "={{ $json.status }}",
-              "rightValue": "other",
+              "rightValue": "document_pass",
               "operator": {
                 "type": "string",
-                "operation": "notEquals"
+                "operation": "equals"
               }
             },
             {
               "id": "cond2",
               "leftValue": "={{ $json.status }}",
-              "rightValue": "applied",
+              "rightValue": "interview",
               "operator": {
                 "type": "string",
-                "operation": "notEquals"
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "cond3",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "final_pass",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "cond4",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "reject",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
               }
             }
           ],
-          "combinator": "and"
+          "combinator": "or"
         }
       },
       "id": "n07-if",
@@ -196,7 +214,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// 새로 삽입된 결과만 → 디스코드 payload(+메일 링크) + notified UPDATE. [Each Item]\nconst r = $json;\nconst icon = ({document_pass:'📄',interview:'📅',final_pass:'🎉',reject:'😢'})[r.status] || '📩';\nconst label = ({document_pass:'서류 합격',interview:'면접·전형 안내',final_pass:'최종 합격',reject:'불합격'})[r.status] || r.status;\nconst idx = $('설정 (Config)').first().json.gmailUserIndex || '0';\nconst mid = r.message_id || '';\nlet link = '';\nif (mid && !mid.startsWith('h:')) link = `https://mail.google.com/mail/u/${idx}/#search/rfc822msgid:` + encodeURIComponent(mid.replace(/[<>]/g,''));\nconst content = `${icon} **[${r.company||'회사미상'}]** ${label}\\n> ${(r.summary||'').slice(0,200)}` + (link ? `\\n📧 메일 열기: ${link}` : '');\nconst esc = (v)=> String(v).replace(/'/g,\"''\");\nreturn { json: {\n  webhook: $('설정 (Config)').first().json.discordWebhookUrl,\n  discordBody: JSON.stringify({ content }),\n  notifiedSql: `UPDATE applications SET notified_at=now() WHERE message_id='${esc(r.message_id)}';`\n} };"
+        "jsCode": "// 새로 삽입된 결과만 → 디스코드 payload(+메일 링크) + notified UPDATE. [Each Item]\nconst r = $json;\nif (!r || !r.message_id || r.status == null) return [];  // 빈 행(중복 ON CONFLICT DO NOTHING) 방어\nconst icon = ({document_pass:'📄',interview:'📅',final_pass:'🎉',reject:'😢'})[r.status] || '📩';\nconst label = ({document_pass:'서류 합격',interview:'면접·전형 안내',final_pass:'최종 합격',reject:'불합격'})[r.status] || r.status;\nconst idx = $('설정 (Config)').first().json.gmailUserIndex || '0';\nconst mid = r.message_id || '';\nlet link = '';\nif (mid && !mid.startsWith('h:')) link = `https://mail.google.com/mail/u/${idx}/#search/rfc822msgid:` + encodeURIComponent(mid.replace(/[<>]/g,''));\nconst content = `${icon} **[${r.company||'회사미상'}]** ${label}\\n> ${(r.summary||'').slice(0,200)}` + (link ? `\\n📧 메일 열기: ${link}` : '');\nconst esc = (v)=> String(v).replace(/'/g,\"''\");\nreturn { json: {\n  webhook: $('설정 (Config)').first().json.discordWebhookUrl,\n  discordBody: JSON.stringify({ content }),\n  notifiedSql: `UPDATE applications SET notified_at=now() WHERE message_id='${esc(r.message_id)}';`\n} };"
       },
       "id": "n07-notgen",
       "name": "알림·마킹 생성",
