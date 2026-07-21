@@ -23,3 +23,4 @@ services:
       - ./jenkins/casc.yaml:/var/jenkins_home/casc.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - /home/ubuntu/n8n-pjt:/home/ubuntu/n8n-pjt   # 경로 일치(핵심)
+      - /home/ubuntu/career-agent:/home/ubuntu/career-agent   # career-agent(2번째 프로젝트) 경로 일치

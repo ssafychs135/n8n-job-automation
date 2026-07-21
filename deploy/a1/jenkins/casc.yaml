@@ -31,3 +31,20 @@ jobs:
         }
         triggers { scm('H/3 * * * *') }
       }
+  - script: >
+      pipelineJob('career-agent') {
+        description('career-agent 웹서비스 CI→CD (GitOps)')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url('https://github.com/ssafychs135/career-agent.git') }
+                branch('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(false)
+          }
+        }
+        triggers { scm('H/3 * * * *') }
+      }
