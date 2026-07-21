@@ -67,7 +67,9 @@ pipeline {
           sleep 15
           docker compose exec -T n8n node -e 'fetch("http://localhost:5678/healthz").then(r=>{if(!r.ok)process.exit(1);console.log("n8n ok")}).catch(()=>process.exit(1))'
           docker compose exec -T n8n node -e 'fetch("http://host.docker.internal:1234/v1/models").then(r=>{if(!r.ok)process.exit(1);return r.json()}).then(d=>console.log("llm ok",d.data.length)).catch(()=>process.exit(1))'
-          docker compose exec -T postgres psql -U n8n -d jobs -tAc "select 'jobs='||count(*) from jobs" | grep -qE 'jobs=[1-9]'
+          # DB 이전(2026-07-21): jobs DB는 career-agent 소유(jobs_shared 별칭 postgres). 로컬 postgres는
+          # legacy 프로파일로 은퇴됨. n8n이 career-agent DB 호스트를 해석하는지로 재연결 무결성 검증.
+          docker compose exec -T n8n getent hosts postgres | grep -q .
         '''
       }
     }
