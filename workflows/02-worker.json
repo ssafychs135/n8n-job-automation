@@ -82,13 +82,17 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $json.source === 'jumpit' ? 'https://jumpit-api.saramin.co.kr/api/position/' + $json.job_id : 'https://www.wanted.co.kr/api/chaos/jobs/v4/' + $json.job_id + '/details?country=kr' }}",
+        "url": "={{ $json.source === 'jumpit' ? 'https://jumpit-api.saramin.co.kr/api/position/' + $json.job_id : ($env.JOB_PROXY_URL ? $env.JOB_PROXY_URL + '/?url=' + encodeURIComponent('https://www.wanted.co.kr/api/chaos/jobs/v4/' + $json.job_id + '/details?country=kr') : 'https://www.wanted.co.kr/api/chaos/jobs/v4/' + $json.job_id + '/details?country=kr') }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "User-Agent",
               "value": "Mozilla/5.0"
+            },
+            {
+              "name": "X-Proxy-Secret",
+              "value": "={{ $env.JOB_PROXY_SECRET }}"
             }
           ]
         },
