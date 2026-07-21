@@ -37,6 +37,10 @@ services:
       # 비밀·개인 설정은 워크플로우 JSON이 아닌 env로 주입(공개 리포 유출 방지).
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
       - SEARCH_KEYWORDS=${SEARCH_KEYWORDS}
+      # wanted가 A1(OCI 데이터센터 IP)을 CloudFront 403으로 차단 → CF Worker 프록시 경유.
+      # 값 미설정 시 collector는 wanted를 직접 호출(로컬 개발 fallback).
+      - JOB_PROXY_URL=${JOB_PROXY_URL}
+      - JOB_PROXY_SECRET=${JOB_PROXY_SECRET}
 
     volumes:
       # n8n 상태 영속화: SQLite DB, 자격증명(credentials), 워크플로우가 여기에 저장됨.
