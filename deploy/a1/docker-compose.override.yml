@@ -11,11 +11,20 @@ services:
       - "127.0.0.1:5678:5678"
     volumes:
       - ./workflows:/workflows:ro   # CD의 import:workflow 소스(GitOps)
+    # DB 이전(2026-07-21): 워크플로우 Postgres 자격증명 host=postgres 가 career-agent 소유
+    # Postgres(jobs_shared 별칭 postgres)로 해석되도록 재연결. 구 로컬 postgres 의존 제거.
+    depends_on: !reset null
+    networks:
+      default: {}
+      jobs_shared: {}               # career-agent 소유 Postgres(별칭 postgres)에 도달
 
   postgres:
     # 외부/공개 노출 불필요 — 로컬 전용 바인딩(컨테이너끼리는 compose 네트워크로 통신).
     ports: !override
       - "127.0.0.1:5432:5432"
+    # DB 이전 완료 → 구 로컬 DB는 legacy 프로파일로 게이트(up -d 기본 미기동, 가역 은퇴).
+    # 데이터·볼륨(./data/postgres)은 롤백 위해 보존. 되살리려면 --profile legacy.
+    profiles: ["legacy"]
 
   # 맥 LM Studio 자리를 대신하는 인증주입 리버스프록시.
   # 같은 default 네트워크에서 host.docker.internal 별칭으로 노출 → n8n이 :1234로 직접 접속.
@@ -34,3 +43,8 @@ services:
       default:
         aliases:
           - host.docker.internal
+
+# career-agent가 소유한 공유 Postgres 네트워크(외부 생성됨: docker network create jobs_shared).
+networks:
+  jobs_shared:
+    external: true
